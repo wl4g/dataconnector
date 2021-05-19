@@ -1,0 +1,110 @@
+# Copyright (c) 2017 ~ 2025, the original authors individual Inc,
+# All rights reserved. Contact us James Wong <jameswong1376@gmail.com>
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# #### Environment Subscriber configuration. ####
+#
+
+kafka-subscriber:
+  pipelines:
+    - source:
+        topicPattern: "input-.*"
+        parallelism: 2
+        consumerProps:
+          bootstrap.servers: "localhost:9092"
+          group.id: "shared-source-0"
+          #enable.auto.commit: false
+          #auto.offset.reset: earliest
+          #max.poll.records: 500
+          #max.poll.interval.ms: 300000
+          #session.timeout.ms: 30000
+          #request.timeout.ms: 40000
+          #heartbeat.interval.ms: 10000
+          #fetch.max.wait.ms: 5000
+          #fetch.min.bytes: 1
+          #fetch.max.bytes: 52428800
+          #max.partition.fetch.bytes: 1048576
+          #connections.max.idle.ms: 540000
+          #receive.buffer.bytes: 65536
+          #send.buffer.bytes: 131072
+          #retry.backoff.ms: 100
+          #reconnect.backoff.ms: 50
+          #metrics.sample.window.ms: 30000
+          #metric.reporters: io.joyrpc.metrics.kafka.KafkaMetricsReporter
+          #metric.reporter.class: io.joyrpc.metrics.kafka.KafkaMetricsReporter
+          #metric.reporter.topic: metrics
+          #metric.reporter.topic.partitions: 1
+          #metric.reporter.topic.replication.factor: 1
+          #metric.reporter.topic.period: 60
+          #metric.reporter.topic.period.unit: SECONDS
+          #metric.reporter.topic.send.timeout: 10000
+          #metric.reporter.topic.send.timeout.unit: MILLISECONDS
+          #metric.reporter.topic.buffer.size: 10000
+          #metric.reporter.topic.buffer.size.unit: BYTES
+          #metric.reporter.topic.compression.type: none
+          #metric.reporter.topic.compression.level: -1
+          #metric.reporter.topic.clean: false
+          #metric.reporter.topic.clean.interval: 60
+          #metric.reporter.topic.clean.interval.unit: SECONDS
+          #metric.reporter.topic.clean.wait: 60
+          #metric.reporter.topic.clean.wait.unit: SECONDS
+          #metric.reporter.topic.clean.policy: delete
+          #metric.reporter.topic.clean.policy.delete.retention.ms: 86400000
+          #metric.reporter.topic.clean.policy.delete.retention.ms.unit: MILLISECONDS
+          #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms: 0
+          #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms.unit: MILLISECONDS
+          #metric.reporter.topic.clean.policy.delete.min.cleanable.dirty.ratio: 0.5
+      filter:
+        topicPrefix: "filtered-"
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        preStartAllCoreThreads: true
+        sequenceExecutorsMaxCountLimit: 100
+        sequenceExecutorsPerQueueSize: 100
+        producerMaxCountLimit: 100
+        isBestQoS: true
+        checkpointTimeout: 6h
+        checkpointFastFail: true
+        producerProps:
+          bootstrap.servers: "localhost:9092"
+          acks: 0
+          request.timeout.ms: 30000
+          max.request.size: 1048576
+          send.buffer.bytes: 131072
+          retries: 5
+          retry.backoff.ms: 6000
+          compression.type: gzip
+      sink:
+        parallelism: 2
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        preStartAllCoreThreads: true
+        sequenceExecutorsMaxCountLimit: 100
+        sequenceExecutorsPerQueueSize: 100
+        producerMaxCountLimit: 100
+        isBestQoS: true
+        checkpointTimeout: 6h
+        checkpointFastFail: true
+        consumerProps:
+          bootstrap.servers: "localhost:9092"
+          group.id: "filtered-sink-0"
+
+  subscribers:
+    - id: 0
+      name: "subscriber-0"
+      enable: true
+      condition:
+      brokerConnect:
+      isSequence: false
+    - id: 1
+      name: "subscriber-1"
+      enable: true
+      condition:
+      brokerConnect:
+      isSequence: true
