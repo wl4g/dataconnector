@@ -71,9 +71,11 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         super(context, config, facade, registry);
 
         // Create the shared filter single executor.
-        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(), config.getFilter().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
+        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(),
+                config.getFilter().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
                 // TODO or use bounded queue
-                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()), new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()),
+                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
         if (config.getFilter().isPreStartAllCoreThreads()) {
             this.sharedNonSequenceFilterExecutor.prestartAllCoreThreads();
         }
@@ -83,7 +85,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         for (int i = 0; i < config.getFilter().getSequenceExecutorsMaxCountLimit(); i++) {
             final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                     // TODO or use bounded queue
-                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()), new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()),
+                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
             if (config.getFilter().isPreStartAllCoreThreads()) {
                 executor.prestartAllCoreThreads();
             }
@@ -132,7 +135,9 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         final ISubscribeFilter subscribeFilter = getSubscribeFilter();
 
         // Execute custom filters in parallel and async submit them to different send executor queues.
-        final List<SentResult> result = safeList(subscriberRecords).parallelStream().filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value())).map(this::doSendToFilteredAsync).collect(toList());
+        final List<SentResult> result = safeList(subscriberRecords).parallelStream()
+                .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
+                .map(this::doSendToFilteredAsync).collect(toList());
 
         // Flush all producers to ensure that all records in this batch are committed.
         result.stream().map(SentResult::getProducer).forEach(KafkaProducer::flush);

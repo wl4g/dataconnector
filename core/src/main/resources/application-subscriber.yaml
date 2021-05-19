@@ -11,6 +11,61 @@
 # #### Environment Subscriber configuration. ####
 #
 
+base:
+  pipeline:
+    consumerProps: &baseConsumerProps
+      request.timeout.ms: 30000
+      #enable.auto.commit: false
+      #auto.offset.reset: earliest
+      #max.poll.records: 500
+      #max.poll.interval.ms: 300000
+      #session.timeout.ms: 30000
+      #heartbeat.interval.ms: 10000
+      #fetch.max.wait.ms: 5000
+      #fetch.min.bytes: 1
+      #fetch.max.bytes: 52428800
+      #max.partition.fetch.bytes: 1048576
+      #connections.max.idle.ms: 540000
+      #receive.buffer.bytes: 65536
+      #send.buffer.bytes: 131072
+      #retry.backoff.ms: 100
+      #reconnect.backoff.ms: 50
+      #metrics.sample.window.ms: 30000
+      #metric.reporters: io.joyrpc.metrics.kafka.KafkaMetricsReporter
+      #metric.reporter.class: io.joyrpc.metrics.kafka.KafkaMetricsReporter
+      #metric.reporter.topic: metrics
+      #metric.reporter.topic.partitions: 1
+      #metric.reporter.topic.replication.factor: 1
+      #metric.reporter.topic.period: 60
+      #metric.reporter.topic.period.unit: SECONDS
+      #metric.reporter.topic.send.timeout: 10000
+      #metric.reporter.topic.send.timeout.unit: MILLISECONDS
+      #metric.reporter.topic.buffer.size: 10000
+      #metric.reporter.topic.buffer.size.unit: BYTES
+      #metric.reporter.topic.compression.type: none
+      #metric.reporter.topic.compression.level: -1
+      #metric.reporter.topic.clean: false
+      #metric.reporter.topic.clean.interval: 60
+      #metric.reporter.topic.clean.interval.unit: SECONDS
+      #metric.reporter.topic.clean.wait: 60
+      #metric.reporter.topic.clean.wait.unit: SECONDS
+      #metric.reporter.topic.clean.policy: delete
+      #metric.reporter.topic.clean.policy.delete.retention.ms: 86400000
+      #metric.reporter.topic.clean.policy.delete.retention.ms.unit: MILLISECONDS
+      #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms: 0
+      #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms.unit: MILLISECONDS
+      #metric.reporter.topic.clean.policy.delete.min.cleanable.dirty.ratio: 0.5
+    executorProps: &baseExecutorProps
+      sharedExecutorThreadPoolSize: 50
+      sharedExecutorQueueSize: 500
+      preStartAllCoreThreads: true
+      sequenceExecutorsMaxCountLimit: 100
+      sequenceExecutorsPerQueueSize: 100
+      producerMaxCountLimit: 100
+      isBestQoS: true
+      checkpointTimeout: 6h
+      checkpointFastFail: true
+
 kafka-subscriber:
   pipelines:
     - source:
@@ -19,58 +74,10 @@ kafka-subscriber:
         consumerProps:
           bootstrap.servers: "localhost:9092"
           group.id: "shared-source-0"
-          #enable.auto.commit: false
-          #auto.offset.reset: earliest
-          #max.poll.records: 500
-          #max.poll.interval.ms: 300000
-          #session.timeout.ms: 30000
-          #request.timeout.ms: 40000
-          #heartbeat.interval.ms: 10000
-          #fetch.max.wait.ms: 5000
-          #fetch.min.bytes: 1
-          #fetch.max.bytes: 52428800
-          #max.partition.fetch.bytes: 1048576
-          #connections.max.idle.ms: 540000
-          #receive.buffer.bytes: 65536
-          #send.buffer.bytes: 131072
-          #retry.backoff.ms: 100
-          #reconnect.backoff.ms: 50
-          #metrics.sample.window.ms: 30000
-          #metric.reporters: io.joyrpc.metrics.kafka.KafkaMetricsReporter
-          #metric.reporter.class: io.joyrpc.metrics.kafka.KafkaMetricsReporter
-          #metric.reporter.topic: metrics
-          #metric.reporter.topic.partitions: 1
-          #metric.reporter.topic.replication.factor: 1
-          #metric.reporter.topic.period: 60
-          #metric.reporter.topic.period.unit: SECONDS
-          #metric.reporter.topic.send.timeout: 10000
-          #metric.reporter.topic.send.timeout.unit: MILLISECONDS
-          #metric.reporter.topic.buffer.size: 10000
-          #metric.reporter.topic.buffer.size.unit: BYTES
-          #metric.reporter.topic.compression.type: none
-          #metric.reporter.topic.compression.level: -1
-          #metric.reporter.topic.clean: false
-          #metric.reporter.topic.clean.interval: 60
-          #metric.reporter.topic.clean.interval.unit: SECONDS
-          #metric.reporter.topic.clean.wait: 60
-          #metric.reporter.topic.clean.wait.unit: SECONDS
-          #metric.reporter.topic.clean.policy: delete
-          #metric.reporter.topic.clean.policy.delete.retention.ms: 86400000
-          #metric.reporter.topic.clean.policy.delete.retention.ms.unit: MILLISECONDS
-          #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms: 0
-          #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms.unit: MILLISECONDS
-          #metric.reporter.topic.clean.policy.delete.min.cleanable.dirty.ratio: 0.5
+          <<: *baseConsumerProps
       filter:
         topicPrefix: "filtered-"
-        sharedExecutorThreadPoolSize: 50
-        sharedExecutorQueueSize: 500
-        preStartAllCoreThreads: true
-        sequenceExecutorsMaxCountLimit: 100
-        sequenceExecutorsPerQueueSize: 100
-        producerMaxCountLimit: 100
-        isBestQoS: true
-        checkpointTimeout: 6h
-        checkpointFastFail: true
+        <<: *baseExecutorProps
         producerProps:
           bootstrap.servers: "localhost:9092"
           acks: 0
@@ -82,18 +89,11 @@ kafka-subscriber:
           compression.type: gzip
       sink:
         parallelism: 2
-        sharedExecutorThreadPoolSize: 50
-        sharedExecutorQueueSize: 500
-        preStartAllCoreThreads: true
-        sequenceExecutorsMaxCountLimit: 100
-        sequenceExecutorsPerQueueSize: 100
-        producerMaxCountLimit: 100
-        isBestQoS: true
-        checkpointTimeout: 6h
-        checkpointFastFail: true
+        <<: *baseExecutorProps
         consumerProps:
           bootstrap.servers: "localhost:9092"
           group.id: "filtered-sink-0"
+          <<: *baseConsumerProps
 
   subscribers:
     - id: 0
