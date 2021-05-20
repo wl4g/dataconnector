@@ -25,11 +25,9 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -40,9 +38,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -67,15 +63,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     public FilterBatchMessageDispatcher(ApplicationContext context,
                                         KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                        SubscribeFacade facade, SubscriberRegistry registry) {
+                                        SubscribeFacade facade,
+                                        SubscriberRegistry registry) {
         super(context, config, facade, registry);
 
         // Create the shared filter single executor.
-        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(),
-                config.getFilter().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
+        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(), config.getFilter().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
                 // TODO or use bounded queue
-                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()),
-                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()), new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
         if (config.getFilter().isPreStartAllCoreThreads()) {
             this.sharedNonSequenceFilterExecutor.prestartAllCoreThreads();
         }
@@ -85,8 +80,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         for (int i = 0; i < config.getFilter().getSequenceExecutorsMaxCountLimit(); i++) {
             final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                     // TODO or use bounded queue
-                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()),
-                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()), new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
             if (config.getFilter().isPreStartAllCoreThreads()) {
                 executor.prestartAllCoreThreads();
             }
@@ -134,13 +128,40 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Each processing pipeline uses different custom filter instances.
         final ISubscribeFilter subscribeFilter = getSubscribeFilter();
 
-        // Execute custom filters in parallel and async submit them to different send executor queues.
-        final List<SentResult> result = safeList(subscriberRecords).parallelStream()
-                .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
-                .map(this::doSendToFilteredAsync).collect(toList());
+        // Execute directly custom filters.
+        //final List<SentResult> result = safeList(subscriberRecords).parallelStream()
+        //        .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
+        //        .map(this::doSendToFilteredAsync).collect(toList());
+
+        // Execute custom filters in parallel them to different send executor queues.
+        final List<Future<FilteredResult>> filteredResults = safeList(subscriberRecords).stream()
+                .map(sr -> obtainFilterExecutor(sr)
+                        .submit(() -> subscribeFilter.apply(sr))).collect(toList());
+
+        // Wait for all parallel filtered results to be completed.
+        final Set<SentResult> sentResults = new HashSet<>(filteredResults.size());
+        while (filteredResults.size() > 0) {
+            final Iterator<Future<FilteredResult>> it = filteredResults.iterator();
+            while (it.hasNext()) {
+                final Future<FilteredResult> ff = it.next();
+                if (ff.isDone()) {
+                    try {
+                        final FilteredResult fr = ff.get();
+                        it.remove(); // Remove completed future.
+                        if (fr.getMatched()) {
+                            // Send to filtered record and add sent future.
+                            sentResults.add(doSendToFilteredAsync(fr.getRecord()));
+                        }
+                    } catch (Throwable ex) {
+                        log.error("Failed to getting subscriber filtered result.", ex);
+                    }
+                }
+            }
+            Thread.yield();
+        }
 
         // Flush all producers to ensure that all records in this batch are committed.
-        result.stream().map(SentResult::getProducer).forEach(KafkaProducer::flush);
+        sentResults.stream().map(SentResult::getProducer).forEach(KafkaProducer::flush);
 
         // Wait for all filtered records to be sent completed.
         //
@@ -153,7 +174,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         //
         if (config.getFilter().isBestQoS()) {
             final long timeout = config.getFilter().getCheckpointTimeout().toNanos();
-            final List<Future<RecordMetadata>> futures = result.stream().map(SentResult::getFuture).collect(toList());
+            final List<Future<RecordMetadata>> futures = sentResults.stream().map(SentResult::getFuture).collect(toList());
             final long begin = System.nanoTime();
             while (futures.stream().filter(Future::isDone).count() < futures.size()) {
                 Thread.yield();
@@ -163,13 +184,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                         // If the timeout is exceeded, the program will exit.
                         System.exit(1);
                     } else {
-                        final List<JsonNode> recordValues = safeList(subscriberRecords).stream().map(SubscriberRecord::getRecord).map(ConsumerRecord::value).collect(toList());
+                        final List<JsonNode> recordValues = safeList(subscriberRecords).stream().map(SubscriberRecord::getRecord)
+                                .map(ConsumerRecord::value).collect(toList());
                         log.error("Timeout sent to filtered kafka topic, fail fast has been disabled," + "which is likely to result in loss of filtered data. - {}", recordValues);
                     }
                 }
             }
             try {
-                log.info("Batch sent success and acknowledging ...");
+                log.debug("Batch sent success and acknowledging ...");
                 ack.acknowledge();
                 log.info("Sent success acknowledged.");
             } catch (Throwable ex) {
@@ -177,9 +199,9 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
             }
         } else {
             try {
-                log.info("Batch regardless of success or failure force acknowledging ...");
+                log.debug("Batch regardless of success or failure force acknowledging ...");
                 ack.acknowledge();
-                log.info("Force acknowledged.");
+                log.info("Force to acknowledged.");
             } catch (Throwable ex) {
                 log.error(String.format("Failed to force acknowledge for %s", ack), ex);
             }
@@ -188,10 +210,27 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     private List<SubscriberRecord> matchWrapToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
         final List<SubscriberInfo> subscribers = facade.findSubscribers(SubscriberInfo.builder().build());
-        return records.stream().map(r ->
-                safeList(subscribers).stream()
-                        .filter(s -> facade.matchSubscriberRecord(s, r))
-                        .findFirst().map(s -> new SubscriberRecord(s, r)).get()).collect(toList());
+        return records.stream().map(r -> safeList(subscribers).stream().filter(s -> facade.matchSubscriberRecord(s, r)).limit(1).findFirst().map(s -> new SubscriberRecord(s, r)).get()).collect(toList());
+    }
+
+    private ThreadPoolExecutor obtainFilterExecutor(SubscriberRecord record) {
+        final SubscriberInfo subscriber = record.getSubscriber();
+        final String key = record.getRecord().key();
+        if (subscriber.getIsSequence()) {
+            //final int mod = (int) Math.abs(subscribeId);
+            final int mod = (int) Math.abs(Crc32Util.compute(key));
+            return isolationSequenceFilterExecutors.get(Math.abs((int) (isolationSequenceFilterExecutors.size() % mod)));
+        } else {
+            return sharedNonSequenceFilterExecutor;
+        }
+    }
+
+    private ISubscribeFilter getSubscribeFilter() {
+        try {
+            return context.getBean(config.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
+        } catch (NoSuchBeanDefinitionException ex) {
+            throw new IllegalStateException(String.format("Could not getting custom filter of bean %s", config.getFilter().getCustomFilterBeanName()));
+        }
     }
 
     /**
@@ -213,14 +252,6 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         return new SentResult(SubscriberRecord, producer, producer.send(producerRecord));
     }
 
-    private ISubscribeFilter getSubscribeFilter() {
-        try {
-            return context.getBean(config.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
-        } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom filter of bean %s", config.getFilter().getCustomFilterBeanName()));
-        }
-    }
-
     private KafkaProducer<String, String> obtainKafkaProducer(SubscriberInfo subscriber, String key) {
         KafkaProducer<String, String> producer = null;
         if (subscriber.getIsSequence()) {
@@ -235,20 +266,55 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     @Getter
     @Setter
     @AllArgsConstructor
-    @ToString(callSuper = true)
+    @ToString
     public static class SubscriberRecord {
         private SubscriberInfo subscriber;
         private ConsumerRecord<String, ObjectNode> record;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            SubscriberRecord that = (SubscriberRecord) o;
+            return Objects.equals(record, that.record);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(record);
+        }
     }
 
     @Getter
     @Setter
     @AllArgsConstructor
-    @ToString(callSuper = true)
+    @ToString
+    public static class FilteredResult {
+        private SubscriberRecord record;
+        private Boolean matched;
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @ToString
     public static class SentResult {
-        private SubscriberRecord SubscriberRecord;
+        private SubscriberRecord record;
         private KafkaProducer<String, String> producer;
         private Future<RecordMetadata> future;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            SentResult that = (SentResult) o;
+            return Objects.equals(record, that.record);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(record);
+        }
     }
 
 }

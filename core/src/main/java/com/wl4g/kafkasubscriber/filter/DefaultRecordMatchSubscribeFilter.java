@@ -16,8 +16,7 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 
 /**
  * The {@link DefaultRecordMatchSubscribeFilter}
@@ -30,8 +29,9 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
     public static final String BEAN_NAME = "defaultRecordMatchSubscribeFilter";
 
     @Override
-    public Boolean apply(SubscriberInfo subscriber, ObjectNode record) {
-        return subscriber.getFilterConfig().apply(record);
+    public FilterBatchMessageDispatcher.FilteredResult apply(FilterBatchMessageDispatcher.SubscriberRecord record) {
+        final Boolean matched = record.getSubscriber().getFilterConfig().apply(record.getRecord().value());
+        return new FilterBatchMessageDispatcher.FilteredResult(record, matched);
     }
 
 }

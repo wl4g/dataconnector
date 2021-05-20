@@ -22,6 +22,7 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -58,20 +59,13 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final ThreadPoolExecutor sharedNonSequenceSinkExecutor;
     private final List<ThreadPoolExecutor> isolationSequenceSinkExecutors;
 
-    public SinkBatchMessageDispatcher(ApplicationContext context,
-                                      KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                      SubscribeFacade customizer,
-                                      SubscriberRegistry registry) {
+    public SinkBatchMessageDispatcher(ApplicationContext context, KafkaSubscriberProperties.SubscribePipelineProperties config, SubscribeFacade customizer, SubscriberRegistry registry) {
         super(context, config, customizer, registry);
 
         // Create the shared filter single executor.
-        this.sharedNonSequenceSinkExecutor = new ThreadPoolExecutor(
-                config.getSink().getSharedExecutorThreadPoolSize(),
-                config.getSink().getSharedExecutorThreadPoolSize(),
-                0L, TimeUnit.MILLISECONDS,
+        this.sharedNonSequenceSinkExecutor = new ThreadPoolExecutor(config.getSink().getSharedExecutorThreadPoolSize(), config.getSink().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
                 // TODO or use bounded queue
-                new LinkedBlockingQueue<>(config.getSink().getSharedExecutorQueueSize()),
-                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+                new LinkedBlockingQueue<>(config.getSink().getSharedExecutorQueueSize()), new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
         if (config.getSink().isPreStartAllCoreThreads()) {
             this.sharedNonSequenceSinkExecutor.prestartAllCoreThreads();
         }
@@ -79,11 +73,9 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
         // Create the sequence filter executors.
         this.isolationSequenceSinkExecutors = synchronizedList(new ArrayList<>(config.getSink().getSequenceExecutorsMaxCountLimit()));
         for (int i = 0; i < config.getSink().getSequenceExecutorsMaxCountLimit(); i++) {
-            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1,
-                    0L, TimeUnit.MILLISECONDS,
+            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                     // TODO or use bounded queue
-                    new LinkedBlockingQueue<>(config.getSink().getSequenceExecutorsPerQueueSize()),
-                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+                    new LinkedBlockingQueue<>(config.getSink().getSequenceExecutorsPerQueueSize()), new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
             if (config.getSink().isPreStartAllCoreThreads()) {
                 executor.prestartAllCoreThreads();
             }
@@ -137,10 +129,8 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                         // If the timeout is exceeded, the program will exit.
                         System.exit(1);
                     } else {
-                        final List<JsonNode> recordValues = safeList(filteredRecords).stream()
-                                .map(ConsumerRecord::value).collect(toList());
-                        log.error("Timeout sent to filtered kafka topic, fail fast has been disabled," +
-                                "which is likely to result in loss of filtered data. - {}", recordValues);
+                        final List<JsonNode> recordValues = safeList(filteredRecords).stream().map(ConsumerRecord::value).collect(toList());
+                        log.error("Timeout sent to filtered kafka topic, fail fast has been disabled," + "which is likely to result in loss of filtered data. - {}", recordValues);
                     }
                 }
             }
@@ -166,14 +156,16 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
      */
     private SinkResult doSinkFromFilteredAsync(ConsumerRecord<String, ObjectNode> filteredRecord) {
+        final String key = filteredRecord.key();
         final JsonNode value = filteredRecord.value();
-        final long subscribeId = value.get("$subscriberId").asLong();
+        //final long subscribeId = value.get("$subscriberId").asLong();
         final boolean isSequence = value.get("$isSequence").asBoolean();
 
         ThreadPoolExecutor executor = this.sharedNonSequenceSinkExecutor;
         if (isSequence) {
-            executor = isolationSequenceSinkExecutors.get(
-                    isolationSequenceSinkExecutors.size() % Math.abs(Long.hashCode(subscribeId)));
+            //final int mod = (int) Math.abs(subscribeId);
+            final int mod = (int) Math.abs(Crc32Util.compute(key));
+            executor = isolationSequenceSinkExecutors.get(isolationSequenceSinkExecutors.size() % mod);
         }
 
         final ISubscribeSink subscribeSink = getSubscribeSink();
@@ -186,8 +178,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
         try {
             return context.getBean(config.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
         } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom sink of bean %s",
-                    config.getSink().getCustomSinkBeanName()));
+            throw new IllegalStateException(String.format("Could not getting custom sink of bean %s", config.getSink().getCustomSinkBeanName()));
         }
     }
 

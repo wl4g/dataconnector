@@ -16,10 +16,9 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 
-import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * The {@link ISubscribeFilter}
@@ -27,5 +26,5 @@ import java.util.function.BiFunction;
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeFilter extends BiFunction<SubscriberInfo, ObjectNode, Boolean> {
+public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, FilterBatchMessageDispatcher.FilteredResult> {
 }
