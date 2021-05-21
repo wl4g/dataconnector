@@ -91,19 +91,28 @@ public abstract class ExpressionOperator implements Function<JsonNode, Boolean> 
     @NoArgsConstructor
     public static class LogicalOperator extends ExpressionOperator {
         private @NotNull LogicalType logical;
-        private @NotEmpty List<RelationOperator> subFilters;
+        private @NotEmpty List<ExpressionOperator> subConditions;
 
         @Override
         public Boolean apply(JsonNode record) {
             validate();
-            return logical.getFn().apply(subFilters, record);
+            switch (logical) {
+                case AND:
+                    return safeList(subConditions).stream().allMatch(sub -> sub.apply(record));
+                case OR:
+                    return safeList(subConditions).stream().anyMatch(sub -> sub.apply(record));
+                case NOT:
+                    return safeList(subConditions).stream().noneMatch(sub -> sub.apply(record));
+                default:
+                    throw new Error(String.format("Unsupported logical type '%s'", logical));
+            }
         }
 
         @Override
         public void validate() {
             super.validate();
             notNullOf(logical, "logical");
-            safeList(subFilters).forEach(RelationOperator::validate);
+            safeList(subConditions).forEach(ExpressionOperator::validate);
         }
     }
 

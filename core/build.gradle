@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id "me.champeau.jmh" version "0.7.0"
 }
 
 description = "Kafka Subscriber Core"
@@ -22,4 +23,15 @@ dependencies {
         exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
     }
     testImplementation("junit:junit")
+}
+
+jmh {
+    warmupIterations = 5
+    iterations = 5
+    fork = 1
+    failOnError = true
+    jvmArgs = ['-Xms1G', '-Xmx1G', '-XX:+UseG1GC']
+    profilers = ['gc', 'stack']
+    resultsFile = project.file("${project.buildDir}/reports/jmh/results.json")
+    resultFormat = 'JSON'
 }

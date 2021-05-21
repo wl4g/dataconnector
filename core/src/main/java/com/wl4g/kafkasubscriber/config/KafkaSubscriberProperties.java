@@ -113,7 +113,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         // But it's a pity that spring doesn't get it dynamically from broker.
         // Therefore, tuning must still be set manually, generally equal to the number of partitions.
-        private @Builder.Default Integer parallelism = 1;
+        private @Builder.Default int parallelism = 1;
         private @Builder.Default Map<String, String> consumerProps = new HashMap<String, String>(4) {
             {
                 put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
@@ -156,7 +156,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private Pattern topicPattern;
 
         public SourceProperties() {
-            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared-source-".concat(LOCAL_PROCESS_ID));
+            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));
         }
 
         @Override
@@ -179,8 +179,8 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
         private @Builder.Default boolean preStartAllCoreThreads = true;
-        private @Builder.Default int producerMaxCountLimit = 10;
         private @Builder.Default boolean isBestQoS = true;
+        private @Builder.Default int checkpointProducerMaxCountLimit = 10;
         private @Builder.Default Duration checkpointTimeout = Duration.ofHours(6);
         private @Builder.Default boolean checkpointFastFail = true;
         private @Builder.Default Map<String, String> producerProps = new HashMap<String, String>(4) {
@@ -216,27 +216,24 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     public static class SinkProperties extends AbstractConsumerProperties {
         private @Builder.Default String customSinkBeanName = DefaultSubscribeSink.BEAN_NAME;
-        // By force: min(concurrency, topicPartitions.length)
-        // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
-        // But it's a pity that spring doesn't get it dynamically from broker.
-        // Therefore, tuning must still be set manually, generally equal to the number of partitions.
-        private @Builder.Default Integer parallelism = 1;
+        private @Builder.Default boolean enable = true;
         private @Builder.Default int sharedExecutorThreadPoolSize = 50;
         private @Builder.Default int sharedExecutorQueueSize = 500;
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
         private @Builder.Default boolean preStartAllCoreThreads = true;
-        private @Builder.Default int producerMaxCountLimit = 10;
         private @Builder.Default boolean isBestQoS = true;
+        private @Builder.Default int checkpointProducerMaxCountLimit = 10;
         private @Builder.Default Duration checkpointTimeout = Duration.ofHours(6);
         private @Builder.Default boolean checkpointFastFail = true;
 
         public SinkProperties() {
-            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "filtered-sink-".concat(LOCAL_PROCESS_ID));
+            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "filtered_sink_".concat(LOCAL_PROCESS_ID));
         }
 
         public void validate() {
-            Assert2.isTrueOf(parallelism > 0, "parallelism > 0");
+            super.validate();
+            Assert2.notNullOf(enable, "enable");
         }
     }
 

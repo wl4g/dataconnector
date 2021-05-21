@@ -11,8 +11,9 @@
 # #### Environment Subscriber configuration. ####
 #
 
-base:
-  pipeline:
+
+kafka-subscriber:
+  bases:
     consumerProps: &baseConsumerProps
       request.timeout.ms: 30000
       #enable.auto.commit: false
@@ -61,22 +62,22 @@ base:
       preStartAllCoreThreads: true
       sequenceExecutorsMaxCountLimit: 100
       sequenceExecutorsPerQueueSize: 100
-      producerMaxCountLimit: 100
       isBestQoS: true
+      checkpointProducerMaxCountLimit: 100
       checkpointTimeout: 6h
       checkpointFastFail: true
 
-kafka-subscriber:
   pipelines:
     - source:
-        topicPattern: "input-.*"
+        topicPattern: "input_.*"
         parallelism: 2
         consumerProps:
           bootstrap.servers: "localhost:9092"
-          group.id: "shared-source-0"
+          group.id: "shared_source_0"
           <<: *baseConsumerProps
       filter:
-        topicPrefix: "filtered-"
+        #customSinkBeanName: # By default: defaultRecordMatchSubscribeFilter
+        topicPrefix: "filtered_"
         <<: *baseExecutorProps
         producerProps:
           bootstrap.servers: "localhost:9092"
@@ -88,22 +89,24 @@ kafka-subscriber:
           retry.backoff.ms: 6000
           compression.type: gzip
       sink:
+        enable: true
+        #customSinkBeanName: # By default: defaultSubscribeSink
         parallelism: 2
         <<: *baseExecutorProps
         consumerProps:
           bootstrap.servers: "localhost:9092"
-          group.id: "filtered-sink-0"
+          group.id: "filtered_sink_0"
           <<: *baseConsumerProps
 
   subscribers:
     - id: 0
-      name: "subscriber-0"
+      name: "subscriber_0"
       enable: true
       condition:
       brokerConnect:
       isSequence: false
     - id: 1
-      name: "subscriber-1"
+      name: "subscriber_1"
       enable: true
       condition:
       brokerConnect:

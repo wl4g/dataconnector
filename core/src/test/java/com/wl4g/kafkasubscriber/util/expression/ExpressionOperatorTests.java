@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Assertions;
 import java.util.Arrays;
 
 import static com.wl4g.infra.common.serialize.JacksonUtils.parseToNode;
+import static com.wl4g.infra.common.serialize.JacksonUtils.toJSONString;
 
 /**
  * The {@link ExpressionOperatorTests}
@@ -34,62 +35,92 @@ public class ExpressionOperatorTests {
 
     @Test
     public void testSimpleRelationOperator() {
-        ExpressionOperator.RelationOperator filter = new ExpressionOperator.RelationOperator();
-        filter.setName("testFilter");
-        filter.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter.setFn(new AviatorFunction("a >= 1 && b <= 2"));
-        Assertions.assertTrue(filter.apply(parseToNode("{\"a\":1,\"b\":2}")));
+        ExpressionOperator.RelationOperator condition = new ExpressionOperator.RelationOperator();
+        condition.setName("testCondition");
+        condition.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition.setFn(new AviatorFunction("a >= 1 && b <= 2"));
+        Assertions.assertTrue(condition.apply(parseToNode("{\"a\":1,\"b\":2}")));
     }
 
     @Test
     public void testComplexLogicalOperator() {
-        ExpressionOperator.RelationOperator filter1 = new ExpressionOperator.RelationOperator();
-        filter1.setName("testFilter1");
-        filter1.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter1.setFn(new AviatorFunction("a >= 1 && b <= 2"));
+        ExpressionOperator.RelationOperator condition1 = new ExpressionOperator.RelationOperator();
+        condition1.setName("testCondition1");
+        condition1.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition1.setFn(new AviatorFunction("a >= 1 && b <= 2"));
 
-        ExpressionOperator.RelationOperator filter2 = new ExpressionOperator.RelationOperator();
-        filter2.setName("testFilter2");
-        filter2.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter2.setFn(new AviatorFunction("a >= 5"));
+        ExpressionOperator.RelationOperator condition2 = new ExpressionOperator.RelationOperator();
+        condition2.setName("testCondition2");
+        condition2.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition2.setFn(new AviatorFunction("u.age >= 25 && u.wealth.money >= 500000"));
 
-        ExpressionOperator.LogicalOperator filter3 = new ExpressionOperator.LogicalOperator();
-        filter3.setName("testFilter3");
-        filter3.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter3.setSubFilters(Arrays.asList(filter1, filter2));
+        ExpressionOperator.LogicalOperator condition3 = new ExpressionOperator.LogicalOperator();
+        condition3.setName("testCondition3");
+        condition3.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition3.setLogical(ExpressionOperator.LogicalType.AND);
+        condition3.setSubConditions(Arrays.asList(condition1, condition2));
 
-        filter3.setLogical(ExpressionOperator.LogicalType.AND);
-        Assertions.assertFalse(filter3.apply(parseToNode("{\"a\":1,\"b\":2}")));
+        ExpressionOperator.RelationOperator condition4 = new ExpressionOperator.RelationOperator();
+        condition4.setName("testCondition4");
+        condition4.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition4.setFn(new AviatorFunction("u.country == 'US' || u.country == 'CN'"));
 
-        filter3.setLogical(ExpressionOperator.LogicalType.OR);
-        Assertions.assertTrue(filter3.apply(parseToNode("{\"a\":1,\"b\":2}")));
+        ExpressionOperator.LogicalOperator condition5 = new ExpressionOperator.LogicalOperator();
+        condition5.setName("testCondition5");
+        condition5.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition5.setLogical(ExpressionOperator.LogicalType.OR);
+        condition5.setSubConditions(Arrays.asList(condition3, condition4));
+
+        // ------------------------------------------------------------------------------------
+        //            testCondition5(OR)
+        //            /                \
+        //     testCondition3(AND)      testCondition4
+        //    /                 \                    \
+        // testCondition1        testCondition2       u.country == 'US' || u.country == 'CN'
+        //        |                   |
+        //   a >= 1 && b <= 2    u.age >= 25 && u.wealth.money >= 500000
+        // ------------------------------------------------------------------------------------
+        System.out.println("condition5Json: " + toJSONString(condition5));
+        // OUTPUT OPERATOR:
+        // {"type":"LOGICAL","name":"testCondition5","logical":"OR","subConditions":[{"type":"LOGICAL","name":"testCondition3","logical":"AND",
+        // "subConditions":[{"type":"RELATION","name":"testCondition1","fn":{"expression":"a >= 1 && b <= 2"}},{"type":"RELATION","name":"testCondition2",
+        // "fn":{"expression":"u.age >= 25 && u.wealth.money >= 500000"}}]},{"type":"RELATION","name":"testCondition4","fn":{"expression":"u.country == 'US' || u.country == 'CN'"}}]}
+
+        condition5.setLogical(ExpressionOperator.LogicalType.AND);
+        Assertions.assertTrue(condition5.apply(parseToNode("{\"a\":1,\"b\":2,\"u\":{\"wealth\":{\"money\":500000},\"age\":25,\"country\":\"US\"}}")));
+
+        condition5.setLogical(ExpressionOperator.LogicalType.OR);
+        Assertions.assertTrue(condition5.apply(parseToNode("{\"a\":1,\"b\":2,\"u\":{\"wealth\":{\"money\":499999},\"age\":25,\"country\":\"CN\"}}")));
+
+        condition5.setLogical(ExpressionOperator.LogicalType.AND);
+        Assertions.assertFalse(condition5.apply(parseToNode("{\"a\":1,\"b\":2,\"u\":{\"wealth\":{\"money\":499999},\"age\":25,\"country\":\"JP\"}}")));
     }
 
     @Test
     public void testSerialization() {
-        ExpressionOperator.RelationOperator filter1 = new ExpressionOperator.RelationOperator();
-        filter1.setName("testFilter1");
-        filter1.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter1.setFn(new AviatorFunction("a >= 1 && b <= 2"));
+        ExpressionOperator.RelationOperator condition1 = new ExpressionOperator.RelationOperator();
+        condition1.setName("testCondition1");
+        condition1.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition1.setFn(new AviatorFunction("a >= 1 && b <= 2"));
 
-        ExpressionOperator.RelationOperator filter2 = new ExpressionOperator.RelationOperator();
-        filter2.setName("testFilter2");
-        filter2.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter2.setFn(new AviatorFunction("a >= 5"));
+        ExpressionOperator.RelationOperator condition2 = new ExpressionOperator.RelationOperator();
+        condition2.setName("testCondition2");
+        condition2.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition2.setFn(new AviatorFunction("a >= 5"));
 
-        ExpressionOperator.LogicalOperator filter3 = new ExpressionOperator.LogicalOperator();
-        filter3.setName("testFilter3");
-        filter3.setType(ExpressionOperator.OperatorType.RELATION.name());
-        filter3.setSubFilters(Arrays.asList(filter1, filter2));
+        ExpressionOperator.LogicalOperator condition3 = new ExpressionOperator.LogicalOperator();
+        condition3.setName("testCondition3");
+        condition3.setType(ExpressionOperator.OperatorType.RELATION.name());
+        condition3.setSubConditions(Arrays.asList(condition1, condition2));
 
-        filter3.setLogical(ExpressionOperator.LogicalType.AND);
+        condition3.setLogical(ExpressionOperator.LogicalType.AND);
 
-        String filter3Json = JacksonUtils.toJSONString(filter3);
-        System.out.println(filter3Json);
+        String condition3Json = JacksonUtils.toJSONString(condition3);
+        //System.out.println("condition3Json: " + condition3Json);
 
-        ExpressionOperator filter3Copy = JacksonUtils.parseJSON(filter3Json, ExpressionOperator.class);
-        System.out.println(filter3Copy instanceof ExpressionOperator.LogicalOperator);
-        System.out.println(filter3Copy);
+        ExpressionOperator expectOfCondition3 = JacksonUtils.parseJSON(condition3Json, ExpressionOperator.class);
+        Assertions.assertInstanceOf(ExpressionOperator.LogicalOperator.class, expectOfCondition3);
+        System.out.println("expectOfCondition3: " + expectOfCondition3);
     }
 
 }

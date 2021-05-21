@@ -29,6 +29,8 @@ import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -39,10 +41,7 @@ import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.Collections.synchronizedList;
@@ -59,18 +58,22 @@ import static java.util.stream.Collectors.toList;
 public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final ThreadPoolExecutor sharedNonSequenceFilterExecutor;
     private final List<ThreadPoolExecutor> isolationSequenceFilterExecutors;
-    private final List<KafkaProducer<String, String>> filterProducers;
+    private final List<KafkaProducer<String, String>> filteredCheckpointProducers;
+    private ISubscribeFilter subscribeFilter;
 
     public FilterBatchMessageDispatcher(ApplicationContext context,
                                         KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                        SubscribeFacade facade,
-                                        SubscriberRegistry registry) {
-        super(context, config, facade, registry);
+                                        SubscribeFacade subscribeFacade,
+                                        SubscriberRegistry subscriberRegistry) {
+        super(context, config, subscribeFacade, subscriberRegistry);
 
         // Create the shared filter single executor.
-        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(), config.getFilter().getSharedExecutorThreadPoolSize(), 0L, TimeUnit.MILLISECONDS,
-                // TODO or use bounded queue
-                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()), new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+        this.sharedNonSequenceFilterExecutor = new ThreadPoolExecutor(config.getFilter().getSharedExecutorThreadPoolSize(),
+                config.getFilter().getSharedExecutorThreadPoolSize(),
+                0L, TimeUnit.MILLISECONDS,
+                // TODO support for bounded queue
+                new LinkedBlockingQueue<>(config.getFilter().getSharedExecutorQueueSize()),
+                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
         if (config.getFilter().isPreStartAllCoreThreads()) {
             this.sharedNonSequenceFilterExecutor.prestartAllCoreThreads();
         }
@@ -79,16 +82,23 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         this.isolationSequenceFilterExecutors = synchronizedList(new ArrayList<>(config.getFilter().getSequenceExecutorsMaxCountLimit()));
         for (int i = 0; i < config.getFilter().getSequenceExecutorsMaxCountLimit(); i++) {
             final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-                    // TODO or use bounded queue
-                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()), new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+                    // TODO support for bounded queue
+                    new LinkedBlockingQueue<>(config.getFilter().getSequenceExecutorsPerQueueSize()),
+                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
             if (config.getFilter().isPreStartAllCoreThreads()) {
                 executor.prestartAllCoreThreads();
             }
             this.isolationSequenceFilterExecutors.add(executor);
         }
 
-        // Create the internal filtered producers.
-        this.filterProducers = synchronizedList(new ArrayList<>(config.getFilter().getProducerMaxCountLimit()));
+        // Create the internal filtered checkpoint producers.
+        this.filteredCheckpointProducers = synchronizedList(new ArrayList<>(config.getFilter().getCheckpointProducerMaxCountLimit()));
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        // Create custom subscribe filter. (Each processing pipeline uses different custom filter instances)
+        this.subscribeFilter = obtainSubscribeFilter();
     }
 
     @Override
@@ -109,7 +119,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                 log.error(String.format("Failed to close sequence filter executor %s.", executor), ex);
             }
         });
-        filterProducers.forEach(producer -> {
+        filteredCheckpointProducers.forEach(producer -> {
             try {
                 log.info("Closing kafka producer {}...", producer);
                 producer.close();
@@ -125,18 +135,21 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Match wrap to subscriber rules records.
         final List<SubscriberRecord> subscriberRecords = matchWrapToSubscribesRecords(records);
 
-        // Each processing pipeline uses different custom filter instances.
-        final ISubscribeFilter subscribeFilter = getSubscribeFilter();
-
         // Execute directly custom filters.
-        //final List<SentResult> result = safeList(subscriberRecords).parallelStream()
+        //final List<SentResult> sentResults = safeList(subscriberRecords).parallelStream()
         //        .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
         //        .map(this::doSendToFilteredAsync).collect(toList());
 
         // Execute custom filters in parallel them to different send executor queues.
         final List<Future<FilteredResult>> filteredResults = safeList(subscriberRecords).stream()
-                .map(sr -> obtainFilterExecutor(sr)
+                .map(sr -> determineFilterExecutor(sr)
                         .submit(() -> subscribeFilter.apply(sr))).collect(toList());
+
+        // TODO Wait for all parallel filtered results to be completed.
+        if (!config.getSink().isEnable()) {
+            log.info("Sink is disabled, skip to send filtered results to kafka.");
+            return;
+        }
 
         // Wait for all parallel filtered results to be completed.
         final Set<SentResult> sentResults = new HashSet<>(filteredResults.size());
@@ -144,16 +157,27 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
             final Iterator<Future<FilteredResult>> it = filteredResults.iterator();
             while (it.hasNext()) {
                 final Future<FilteredResult> ff = it.next();
+                // Notice: is done is not necessarily successful, both exception and cancellation will be done.
                 if (ff.isDone()) {
+                    FilteredResult fr = null;
                     try {
-                        final FilteredResult fr = ff.get();
-                        it.remove(); // Remove completed future.
-                        if (fr.getMatched()) {
-                            // Send to filtered record and add sent future.
-                            sentResults.add(doSendToFilteredAsync(fr.getRecord()));
+                        fr = ff.get();
+                    } catch (InterruptedException | CancellationException ex) {
+                        // Should not happen, prevent loss of data.
+                        log.error("Unable to getting subscribe filter result.", ex);
+                        // TODO re-add to filter executor queue?
+                    } catch (ExecutionException ex) {
+                        log.error("Could not to getting subscribe filter result.", ex);
+                        final Throwable rootCause = ExceptionUtils.getRootCause(ex);
+                        if (rootCause instanceof RuntimeException) {
+                            // TODO re-add to filter executor queue?
                         }
-                    } catch (Throwable ex) {
-                        log.error("Failed to getting subscriber filtered result.", ex);
+                    } finally {
+                        it.remove();
+                    }
+                    if (Objects.nonNull(fr) && fr.getMatched()) {
+                        // Send to filtered topic and add sent future.
+                        sentResults.add(doSendToFilteredAsync(fr.getRecord()));
                     }
                 }
             }
@@ -186,7 +210,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                     } else {
                         final List<JsonNode> recordValues = safeList(subscriberRecords).stream().map(SubscriberRecord::getRecord)
                                 .map(ConsumerRecord::value).collect(toList());
-                        log.error("Timeout sent to filtered kafka topic, fail fast has been disabled," + "which is likely to result in loss of filtered data. - {}", recordValues);
+                        log.error("Timeout sent to filtered kafka topic, fail fast has been disabled,"
+                                + "which is likely to result in loss of filtered data. - {}", recordValues);
                     }
                 }
             }
@@ -210,56 +235,65 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     private List<SubscriberRecord> matchWrapToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
         final List<SubscriberInfo> subscribers = facade.findSubscribers(SubscriberInfo.builder().build());
-        return records.stream().map(r -> safeList(subscribers).stream().filter(s -> facade.matchSubscriberRecord(s, r)).limit(1).findFirst().map(s -> new SubscriberRecord(s, r)).get()).collect(toList());
+        return records.stream().map(r -> safeList(subscribers).stream()
+                .filter(s -> facade.matchSubscriberRecord(s, r))
+                .limit(1).findFirst().map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
+                    log.warn(String.format("No matched subscriber for record : %s", r));
+                    return null;
+                })).filter(Objects::nonNull).collect(toList());
     }
 
-    private ThreadPoolExecutor obtainFilterExecutor(SubscriberRecord record) {
+    private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
         final SubscriberInfo subscriber = record.getSubscriber();
         final String key = record.getRecord().key();
         if (subscriber.getIsSequence()) {
-            //final int mod = (int) Math.abs(subscribeId);
-            final int mod = (int) Math.abs(Crc32Util.compute(key));
+            //final int mod = (int) subscriber.getId();
+            final int mod = (int) Crc32Util.compute(key);
             return isolationSequenceFilterExecutors.get(Math.abs((int) (isolationSequenceFilterExecutors.size() % mod)));
         } else {
             return sharedNonSequenceFilterExecutor;
         }
     }
 
-    private ISubscribeFilter getSubscribeFilter() {
+    private ISubscribeFilter obtainSubscribeFilter() {
         try {
             return context.getBean(config.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
         } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom filter of bean %s", config.getFilter().getCustomFilterBeanName()));
+            throw new IllegalStateException(String.format("Could not getting custom subscriber filter of bean %s",
+                    config.getFilter().getCustomFilterBeanName()));
         }
     }
 
     /**
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
      */
-    private SentResult doSendToFilteredAsync(SubscriberRecord SubscriberRecord) {
-        final SubscriberInfo subscriber = SubscriberRecord.getSubscriber();
-        final String key = SubscriberRecord.getRecord().key();
-        final ObjectNode value = SubscriberRecord.getRecord().value();
+    private SentResult doSendToFilteredAsync(SubscriberRecord record) {
+        final SubscriberInfo subscriber = record.getSubscriber();
+        final String key = record.getRecord().key();
+        final ObjectNode value = record.getRecord().value();
 
-        final KafkaProducer<String, String> producer = obtainKafkaProducer(subscriber, key);
+        final KafkaProducer<String, String> producer = determineKafkaProducer(subscriber, key);
         final String filteredTopic = facade.generateFilteredTopic(config, subscriber);
 
         // Notice: Hand down the subscriber metadata of each record to the downstream.
-        value.set("$subscriberId", LongNode.valueOf(subscriber.getId()));
-        value.set("$isSequence", BooleanNode.valueOf(subscriber.getIsSequence()));
+        value.set("$$subscriberId", LongNode.valueOf(subscriber.getId()));
+        value.set("$$isSequence", BooleanNode.valueOf(subscriber.getIsSequence()));
 
         ProducerRecord<String, String> producerRecord = new ProducerRecord<String, String>(filteredTopic, key, value.asText());
-        return new SentResult(SubscriberRecord, producer, producer.send(producerRecord));
+        return new SentResult(record, producer, producer.send(producerRecord));
     }
 
-    private KafkaProducer<String, String> obtainKafkaProducer(SubscriberInfo subscriber, String key) {
-        KafkaProducer<String, String> producer = null;
+    private KafkaProducer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
+        KafkaProducer<String, String> producer = filteredCheckpointProducers.get(RandomUtils.nextInt(0, filteredCheckpointProducers.size()));
         if (subscriber.getIsSequence()) {
-            producer = filterProducers.get(filterProducers.size() % Math.abs(key.hashCode()));
+            //final int mod = (int) subscriber.getId();
+            final int mod = (int) Crc32Util.compute(key);
+            producer = filteredCheckpointProducers.get(filteredCheckpointProducers.size() % mod);
         }
         if (Objects.isNull(producer)) {
             throw new IllegalStateException(String.format("Could not getting producer by subscriber: %s, key: %s", subscriber.getId(), key));
         }
+        log.debug("Using kafka producer by subscriber: {}, key: {}", subscriber.getId(), key);
         return producer;
     }
 

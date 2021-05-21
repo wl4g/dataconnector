@@ -16,17 +16,17 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
-import com.wl4g.kafkasubscriber.meter.SubscriberMeter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -43,7 +43,7 @@ import java.util.List;
 @Getter
 @Slf4j
 public abstract class AbstractBatchMessageDispatcher
-        implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
+        implements BatchAcknowledgingMessageListener<String, ObjectNode>, InitializingBean, Closeable {
 
     protected final ApplicationContext context;
     protected final KafkaSubscriberProperties.SubscribePipelineProperties config;
@@ -62,23 +62,26 @@ public abstract class AbstractBatchMessageDispatcher
     @Override
     public void onMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
         try {
-            SubscriberMeter.getDefault().counter(
-                    SubscriberMeter.MetricsName.shared_consumed.getName(),
-                    SubscriberMeter.MetricsName.shared_consumed.getHelp(),
-                    SubscriberMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
-                    SubscriberMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
+            SubscribeMeter.getDefault().counter(
+                    SubscribeMeter.MetricsName.shared_consumed.getName(),
+                    SubscribeMeter.MetricsName.shared_consumed.getHelp(),
+                    SubscribeMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
+                    SubscribeMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
             ).increment();
-            final Timer timer = SubscriberMeter.getDefault().timer(
-                    SubscriberMeter.MetricsName.shared_consumed_time.getName(),
-                    SubscriberMeter.MetricsName.shared_consumed_time.getHelp(),
-                    SubscriberMeter.DEFAULT_PERCENTILES,
-                    SubscriberMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
-                    SubscriberMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
+            final Timer timer = SubscribeMeter.getDefault().timer(
+                    SubscribeMeter.MetricsName.shared_consumed_time.getName(),
+                    SubscribeMeter.MetricsName.shared_consumed_time.getHelp(),
+                    SubscribeMeter.DEFAULT_PERCENTILES,
+                    SubscribeMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
+                    SubscribeMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
             );
             timer.record(() -> doOnMessage(records, ack));
         } catch (Throwable ex) {
             log.error(String.format("Failed to process message. - %s", records), ex);
-            throw ex;
+            // Submit directly if no quality of service is required.
+            if (!config.getFilter().isBestQoS()) {
+                ack.acknowledge();
+            }
         }
     }
 

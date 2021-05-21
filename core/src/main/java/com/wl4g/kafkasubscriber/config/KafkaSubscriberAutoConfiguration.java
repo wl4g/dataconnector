@@ -19,12 +19,12 @@ package com.wl4g.kafkasubscriber.config;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
-import com.wl4g.kafkasubscriber.dispatch.KafkaSubscriberManager;
+import com.wl4g.kafkasubscriber.dispatch.KafkaSubscriberBootstrap;
 import com.wl4g.kafkasubscriber.sink.ShardingSubscriberCoordinator;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
-import com.wl4g.kafkasubscriber.meter.SubscriberMeter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.DefaultSubscribeSink;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
@@ -55,7 +55,7 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeFacade defaultSubscriberCustomizer(KafkaSubscriberProperties config) {
+    public SubscribeFacade defaultSubscriberFacade(KafkaSubscriberProperties config) {
         return new SubscribeFacade() {
             @Override
             public List<SubscriberInfo> findSubscribers(SubscriberInfo query) {
@@ -72,19 +72,19 @@ public class KafkaSubscriberAutoConfiguration {
     }
 
     @Bean
-    public KafkaSubscriberManager kafkaSubscribeManager(ApplicationContext context,
-                                                        KafkaSubscriberProperties config,
-                                                        SubscribeFacade customizer,
-                                                        SubscriberRegistry registry) {
-        return new KafkaSubscriberManager(context, config, customizer, registry);
+    public KafkaSubscriberBootstrap kafkaSubscribeManager(ApplicationContext context,
+                                                          KafkaSubscriberProperties config,
+                                                          SubscribeFacade facade,
+                                                          SubscriberRegistry registry) {
+        return new KafkaSubscriberBootstrap(context, config, facade, registry);
     }
 
     @Bean
-    public SubscriberMeter subscriberMeter(ApplicationContext context,
-                                           PrometheusMeterRegistry meterRegistry,
-                                           @Value("${spring.application.name}") String appName,
-                                           @Value("${server.port}") Integer port) {
-        return new SubscriberMeter(context, meterRegistry, appName, port);
+    public SubscribeMeter subscriberMeter(ApplicationContext context,
+                                          PrometheusMeterRegistry meterRegistry,
+                                          @Value("${spring.application.name}") String appName,
+                                          @Value("${server.port}") Integer port) {
+        return new SubscribeMeter(context, meterRegistry, appName, port);
     }
 
     @Bean
@@ -100,7 +100,7 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean(DefaultSubscribeSink.BEAN_NAME)
     @ConditionalOnMissingBean
-    public ISubscribeSink defaultSubscribeSink() {
+    public ISubscribeSink defaultSubscriberSink() {
         return new DefaultSubscribeSink();
     }
 

@@ -19,7 +19,6 @@ package com.wl4g.kafkasubscriber.facade;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import javax.validation.constraints.Null;

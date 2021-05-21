@@ -17,7 +17,6 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.util.concurrent.Future;

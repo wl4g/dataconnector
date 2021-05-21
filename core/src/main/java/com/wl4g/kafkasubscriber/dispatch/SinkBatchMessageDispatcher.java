@@ -58,6 +58,7 @@ import static java.util.stream.Collectors.toList;
 public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final ThreadPoolExecutor sharedNonSequenceSinkExecutor;
     private final List<ThreadPoolExecutor> isolationSequenceSinkExecutors;
+    private ISubscribeSink subscribeSink;
 
     public SinkBatchMessageDispatcher(ApplicationContext context, KafkaSubscriberProperties.SubscribePipelineProperties config, SubscribeFacade customizer, SubscriberRegistry registry) {
         super(context, config, customizer, registry);
@@ -81,6 +82,12 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
             }
             this.isolationSequenceSinkExecutors.add(executor);
         }
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        // Create custom subscribe sinker. (Each processing pipeline uses different custom sink instances)
+        this.subscribeSink = obtainSubscribeSink();
     }
 
     @Override
@@ -158,27 +165,26 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private SinkResult doSinkFromFilteredAsync(ConsumerRecord<String, ObjectNode> filteredRecord) {
         final String key = filteredRecord.key();
         final JsonNode value = filteredRecord.value();
-        //final long subscribeId = value.get("$subscriberId").asLong();
-        final boolean isSequence = value.get("$isSequence").asBoolean();
+        //final long subscribeId = value.get("$$subscriberId").asLong(-1L);
+        final boolean isSequence = value.get("$$isSequence").asBoolean(false);
 
         ThreadPoolExecutor executor = this.sharedNonSequenceSinkExecutor;
         if (isSequence) {
-            //final int mod = (int) Math.abs(subscribeId);
+            //final int mod = (int) subscribeId;
             final int mod = (int) Math.abs(Crc32Util.compute(key));
             executor = isolationSequenceSinkExecutors.get(isolationSequenceSinkExecutors.size() % mod);
         }
-
-        final ISubscribeSink subscribeSink = getSubscribeSink();
         final Future<?> future = executor.submit(() -> subscribeSink.apply(filteredRecord));
 
         return new SinkResult(filteredRecord, future);
     }
 
-    private ISubscribeSink getSubscribeSink() {
+    private ISubscribeSink obtainSubscribeSink() {
         try {
             return context.getBean(config.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
         } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom sink of bean %s", config.getSink().getCustomSinkBeanName()));
+            throw new IllegalStateException(String.format("Could not getting custom subscriber sink of bean %s",
+                    config.getSink().getCustomSinkBeanName()));
         }
     }
 
