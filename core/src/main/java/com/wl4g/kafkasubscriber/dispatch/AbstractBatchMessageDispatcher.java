@@ -22,6 +22,7 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +33,14 @@ import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.Closeable;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+import static java.util.Collections.synchronizedList;
 
 /**
  * The {@link AbstractBatchMessageDispatcher}
@@ -46,17 +54,68 @@ public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, InitializingBean, Closeable {
 
     protected final ApplicationContext context;
-    protected final KafkaSubscriberProperties.SubscribePipelineProperties config;
-    protected final SubscribeFacade facade;
-    protected final SubscriberRegistry registry;
+    protected final KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig;
+    protected final KafkaSubscriberProperties.GenericProcessProperties processConfig;
+    protected final SubscribeFacade subscribeFacade;
+    protected final SubscriberRegistry subscriberRegistry;
+    protected final ThreadPoolExecutor sharedNonSequenceExecutor;
+    protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
 
     public AbstractBatchMessageDispatcher(ApplicationContext context,
                                           KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                          SubscribeFacade facade, SubscriberRegistry registry) {
+                                          KafkaSubscriberProperties.GenericProcessProperties processConfig,
+                                          SubscribeFacade subscribeFacade,
+                                          SubscriberRegistry subscriberRegistry) {
         this.context = Assert2.notNullOf(context, "context");
-        this.config = Assert2.notNullOf(config, "config");
-        this.facade = Assert2.notNullOf(facade, "facade");
-        this.registry = Assert2.notNullOf(registry, "registry");
+        this.pipelineConfig = Assert2.notNullOf(config, "config");
+        this.processConfig = Assert2.notNullOf(processConfig, "processConfig");
+        this.subscribeFacade = Assert2.notNullOf(subscribeFacade, "subscribeFacade");
+        this.subscriberRegistry = Assert2.notNullOf(subscriberRegistry, "subscriberRegistry");
+
+        // Create the shared filter single executor.
+        this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
+                processConfig.getSharedExecutorThreadPoolSize(),
+                0L, TimeUnit.MILLISECONDS,
+                // TODO support bounded queue
+                new LinkedBlockingQueue<>(processConfig.getSharedExecutorQueueSize()),
+                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+        if (processConfig.isExecutorWarmUp()) {
+            this.sharedNonSequenceExecutor.prestartAllCoreThreads();
+        }
+
+        // Create the sequence filter executors.
+        this.isolationSequenceExecutors = synchronizedList(new ArrayList<>(processConfig.getSequenceExecutorsMaxCountLimit()));
+        for (int i = 0; i < processConfig.getSequenceExecutorsMaxCountLimit(); i++) {
+            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1,
+                    0L, TimeUnit.MILLISECONDS,
+                    // TODO support bounded queue
+                    new LinkedBlockingQueue<>(processConfig.getSequenceExecutorsPerQueueSize()),
+                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+            if (processConfig.isExecutorWarmUp()) {
+                executor.prestartAllCoreThreads();
+            }
+            this.isolationSequenceExecutors.add(executor);
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        try {
+            log.info("Closing shared non filter executor...");
+            this.sharedNonSequenceExecutor.shutdown();
+            log.info("Closed shared non filter executor.");
+        } catch (Throwable ex) {
+            log.error("Failed to close shared filter executor.", ex);
+        }
+        this.isolationSequenceExecutors.forEach(executor -> {
+            try {
+                log.info("Closing filter executor {}...", executor);
+                executor.shutdown();
+                log.info("Closed filter executor {}.", executor);
+            } catch (Throwable ex) {
+                log.error(String.format("Failed to close filter executor %s.", executor), ex);
+            }
+        });
     }
 
     @Override
@@ -65,21 +124,21 @@ public abstract class AbstractBatchMessageDispatcher
             SubscribeMeter.getDefault().counter(
                     SubscribeMeter.MetricsName.shared_consumed.getName(),
                     SubscribeMeter.MetricsName.shared_consumed.getHelp(),
-                    SubscribeMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
-                    SubscribeMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
+                    SubscribeMeter.MetricsTag.TOPIC, pipelineConfig.getSource().getTopicPattern().toString(),
+                    SubscribeMeter.MetricsTag.GROUP_ID, pipelineConfig.getSource().getGroupId()
             ).increment();
             final Timer timer = SubscribeMeter.getDefault().timer(
                     SubscribeMeter.MetricsName.shared_consumed_time.getName(),
                     SubscribeMeter.MetricsName.shared_consumed_time.getHelp(),
                     SubscribeMeter.DEFAULT_PERCENTILES,
-                    SubscribeMeter.MetricsTag.TOPIC, config.getSource().getTopicPattern().toString(),
-                    SubscribeMeter.MetricsTag.GROUP_ID, config.getSource().getGroupId()
+                    SubscribeMeter.MetricsTag.TOPIC, pipelineConfig.getSource().getTopicPattern().toString(),
+                    SubscribeMeter.MetricsTag.GROUP_ID, pipelineConfig.getSource().getGroupId()
             );
             timer.record(() -> doOnMessage(records, ack));
         } catch (Throwable ex) {
             log.error(String.format("Failed to process message. - %s", records), ex);
-            // Submit directly if no quality of service is required.
-            if (!config.getFilter().isBestQoS()) {
+            // Commit directly if no quality of service is required.
+            if (processConfig.getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
         }

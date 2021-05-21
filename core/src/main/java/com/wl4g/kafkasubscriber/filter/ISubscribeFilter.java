@@ -26,5 +26,5 @@ import java.util.function.Function;
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, FilterBatchMessageDispatcher.FilteredResult> {
+public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
 }

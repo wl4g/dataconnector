@@ -29,9 +29,8 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
     public static final String BEAN_NAME = "defaultRecordMatchSubscribeFilter";
 
     @Override
-    public FilterBatchMessageDispatcher.FilteredResult apply(FilterBatchMessageDispatcher.SubscriberRecord record) {
-        final Boolean matched = record.getSubscriber().getFilterConfig().apply(record.getRecord().value());
-        return new FilterBatchMessageDispatcher.FilteredResult(record, matched);
+    public Boolean apply(FilterBatchMessageDispatcher.SubscriberRecord record) {
+        return record.getSubscriber().getFilterConfig().apply(record.getRecord().value());
     }
 
 }

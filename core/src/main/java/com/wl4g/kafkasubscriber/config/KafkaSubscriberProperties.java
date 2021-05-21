@@ -31,10 +31,7 @@ import org.springframework.beans.factory.InitializingBean;
 
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
@@ -68,19 +65,17 @@ public class KafkaSubscriberProperties implements InitializingBean {
 
             // Should be 'max.poll.records' equals to filter executor queue size.
             final Object originalMaxPollRecords = p.getSource().getConsumerProps().get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
-            p.getSource().getConsumerProps().put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(p.getFilter().getSharedExecutorQueueSize()));
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
-                    originalMaxPollRecords, p.getFilter().getSharedExecutorQueueSize(), p.getSource().getGroupId());
+            p.getSource().getConsumerProps().put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(p.getFilter().getProcessProps().getSharedExecutorQueueSize()));
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, p.getFilter().getProcessProps()
+                    .getSharedExecutorQueueSize(), p.getSource().getGroupId());
 
             // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
             p.getSource().getConsumerProps().put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG,
-                    originalMaxPollRecords, "true", p.getSource().getGroupId());
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, originalMaxPollRecords, "true", p.getSource().getGroupId());
 
             // Mandatory manual commit.
             p.getSource().getConsumerProps().put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,
-                    originalMaxPollRecords, "false", p.getSource().getGroupId());
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, originalMaxPollRecords, "false", p.getSource().getGroupId());
         });
     }
 
@@ -108,7 +103,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static abstract class AbstractConsumerProperties {
+    public static abstract class BaseConsumerProperties {
         // By force: min(concurrency, topicPartitions.length)
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         // But it's a pity that spring doesn't get it dynamically from broker.
@@ -152,7 +147,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
-    public static class SourceProperties extends AbstractConsumerProperties {
+    public static class SourceProperties extends BaseConsumerProperties {
         private Pattern topicPattern;
 
         public SourceProperties() {
@@ -171,18 +166,38 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class FilterProperties {
-        private @Builder.Default String topicPrefix = "filtered-";
-        private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
+    public static class GenericProcessProperties {
         private @Builder.Default int sharedExecutorThreadPoolSize = 50;
         private @Builder.Default int sharedExecutorQueueSize = 500;
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
-        private @Builder.Default boolean preStartAllCoreThreads = true;
-        private @Builder.Default boolean isBestQoS = true;
+        private @Builder.Default boolean executorWarmUp = true;
+        private @Builder.Default Qos qos = Qos.MAX_RETRIES;
+        private @Builder.Default int qosMaxRetries = 5;
         private @Builder.Default int checkpointProducerMaxCountLimit = 10;
         private @Builder.Default Duration checkpointTimeout = Duration.ofHours(6);
-        private @Builder.Default boolean checkpointFastFail = true;
+
+        public void validate() {
+            Assert2.isTrueOf(sharedExecutorThreadPoolSize > 0, "sharedExecutorThreadPoolSize > 0");
+            Assert2.isTrueOf(sharedExecutorQueueSize > 0, "sharedExecutorQueueSize > 0");
+            Assert2.isTrueOf(sequenceExecutorsMaxCountLimit > 0, "sequenceExecutorsMaxCountLimit > 0");
+            Assert2.isTrueOf(sequenceExecutorsPerQueueSize > 0, "sequenceExecutorsPerQueueSize > 0");
+            Assert2.notNullOf(qos, "qos");
+            Assert2.isTrueOf(qosMaxRetries > 0, "qosMaxRetries > 0");
+            Assert2.isTrueOf(checkpointProducerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
+            Assert2.isTrueOf(checkpointTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
+        }
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class FilterProperties {
+        private @Builder.Default String topicPrefix = "filtered-";
+        private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
+        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
         private @Builder.Default Map<String, String> producerProps = new HashMap<String, String>(4) {
             {
                 put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
@@ -197,8 +212,9 @@ public class KafkaSubscriberProperties implements InitializingBean {
         };
 
         public void validate() {
+            this.processProps.validate();
+            Assert2.hasTextOf(topicPrefix, "topicPrefix");
             Assert2.hasTextOf(customFilterBeanName, "customFilterBeanName");
-            Assert2.isTrueOf(checkpointTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
             Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
             Assert2.notNullOf(producerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
             Assert2.notNullOf(producerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
@@ -210,22 +226,58 @@ public class KafkaSubscriberProperties implements InitializingBean {
         }
     }
 
+    public static enum Qos {
+        /**
+         * 0: Execute only once and give up if it fails.
+         */
+        MOST_ONCE,
+        /**
+         * 1: Max retries then give up if it fails.
+         */
+        MAX_RETRIES,
+        /**
+         * 2: Strictly not lost, forever retries if it fails.
+         */
+        STRICTLY;
+
+        public boolean isMoseOnce() {
+            return isAnd(MOST_ONCE);
+        }
+
+        public boolean isMaxRetries() {
+            return isAnd(MAX_RETRIES);
+        }
+
+        public boolean isStrictly() {
+            return isAnd(STRICTLY);
+        }
+
+        public boolean isMoseOnceOrMaxRetries() {
+            return isMoseOnce() || isMaxRetries();
+        }
+
+        public boolean isMaxRetriesOrStrictly() {
+            return isMaxRetries() || isStrictly();
+        }
+
+        public boolean isAnd(Qos... qos) {
+            return Arrays.stream(qos).allMatch(this::equals);
+        }
+
+        public boolean isOr(Qos... qos) {
+            return Arrays.asList(qos).contains(this);
+        }
+
+    }
+
     @Getter
     @Setter
     @SuperBuilder
     @ToString
-    public static class SinkProperties extends AbstractConsumerProperties {
+    public static class SinkProperties extends BaseConsumerProperties {
         private @Builder.Default String customSinkBeanName = DefaultSubscribeSink.BEAN_NAME;
         private @Builder.Default boolean enable = true;
-        private @Builder.Default int sharedExecutorThreadPoolSize = 50;
-        private @Builder.Default int sharedExecutorQueueSize = 500;
-        private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
-        private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
-        private @Builder.Default boolean preStartAllCoreThreads = true;
-        private @Builder.Default boolean isBestQoS = true;
-        private @Builder.Default int checkpointProducerMaxCountLimit = 10;
-        private @Builder.Default Duration checkpointTimeout = Duration.ofHours(6);
-        private @Builder.Default boolean checkpointFastFail = true;
+        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
 
         public SinkProperties() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "filtered_sink_".concat(LOCAL_PROCESS_ID));
@@ -233,6 +285,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
 
         public void validate() {
             super.validate();
+            this.processProps.validate();
             Assert2.notNullOf(enable, "enable");
         }
     }

@@ -56,16 +56,16 @@ kafka-subscriber:
       #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms: 0
       #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms.unit: MILLISECONDS
       #metric.reporter.topic.clean.policy.delete.min.cleanable.dirty.ratio: 0.5
-    executorProps: &baseExecutorProps
+    processProps: &baseProcessProps
       sharedExecutorThreadPoolSize: 50
       sharedExecutorQueueSize: 500
-      preStartAllCoreThreads: true
       sequenceExecutorsMaxCountLimit: 100
       sequenceExecutorsPerQueueSize: 100
-      isBestQoS: true
+      executorWarmUp: true
+      qos: 1 # 0:MOST_ONCE|1:MAX_RETRIES|2:STRICTLY
+      qosMaxRetries: 5
       checkpointProducerMaxCountLimit: 100
       checkpointTimeout: 6h
-      checkpointFastFail: true
 
   pipelines:
     - source:
@@ -78,7 +78,8 @@ kafka-subscriber:
       filter:
         #customSinkBeanName: # By default: defaultRecordMatchSubscribeFilter
         topicPrefix: "filtered_"
-        <<: *baseExecutorProps
+        processProps:
+          <<: *baseProcessProps
         producerProps:
           bootstrap.servers: "localhost:9092"
           acks: 0
@@ -92,11 +93,12 @@ kafka-subscriber:
         enable: true
         #customSinkBeanName: # By default: defaultSubscribeSink
         parallelism: 2
-        <<: *baseExecutorProps
         consumerProps:
           bootstrap.servers: "localhost:9092"
           group.id: "filtered_sink_0"
           <<: *baseConsumerProps
+        processProps:
+          <<: *baseProcessProps
 
   subscribers:
     - id: 0
