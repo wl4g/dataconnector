@@ -16,16 +16,18 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.LongNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
+import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -42,6 +44,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -67,8 +70,9 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     public FilterBatchMessageDispatcher(ApplicationContext context,
                                         KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
                                         SubscribeFacade subscribeFacade,
-                                        SubscriberRegistry subscriberRegistry) {
-        super(context, pipelineConfig, pipelineConfig.getFilter().getProcessProps(), subscribeFacade, subscriberRegistry);
+                                        SubscriberRegistry subscriberRegistry,
+                                        String groupId) {
+        super(context, pipelineConfig, pipelineConfig.getFilter().getProcessProps(), subscribeFacade, subscriberRegistry, groupId);
 
         // Create the internal filtered checkpoint producers.
         this.filteredCheckpointProducers = synchronizedList(new ArrayList<>(pipelineConfig.getFilter().getProcessProps().getCheckpointProducerMaxCountLimit()));
@@ -96,105 +100,61 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     @Override
     public void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
-        // Match wrap to subscriber rules records.
-        final List<SubscriberRecord> subscriberRecords = matchWrapToSubscribesRecords(records);
-
-        // Execute directly custom filters.
-        //final List<SentResult> sentResults = safeList(subscriberRecords).parallelStream()
+        // final List<SentResult> sentResults = safeList(subscriberRecords).parallelStream()
         //        .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
         //        .map(this::doSendToFilteredAsync).collect(toList());
 
-        // Execute custom filters in parallel them to different send executor queues.
-        final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
-                .map(sr -> new FilteredResult(sr, determineFilterExecutor(sr).submit(() -> subscribeFilter.apply(sr)), 1)).collect(toList());
+        final Set<SentResult> sentResults = doParallelCustomFilterAndSendAsync(records);
 
-        // TODO Wait for all parallel filtered results to be completed.
-        if (!pipelineConfig.getSink().isEnable()) {
-            log.info("Sink is disabled, skip to send filtered results to kafka.");
+        // If the sending result set is empty, it indicates that checkpoint produce is not enabled and send to the kafka filtered topic.
+        if (Objects.isNull(sentResults)) {
             return;
         }
 
-        // Wait for all parallel filtered results to be completed.
-        final Set<SentResult> sentResults = new HashSet<>(filteredResults.size());
-        while (filteredResults.size() > 0) {
-            final Iterator<FilteredResult> it = filteredResults.iterator();
-            while (it.hasNext()) {
-                final FilteredResult fr = it.next();
-                // Notice: is done is not necessarily successful, both exception and cancellation will be done.
-                if (fr.getFuture().isDone()) {
-                    Boolean matched = null;
-                    try {
-                        matched = fr.getFuture().get();
-                    } catch (InterruptedException | CancellationException ex) {
-                        log.error("Unable to getting subscribe filter result.", ex);
-                        if (pipelineConfig.getFilter().getProcessProps().getQos().isMaxRetriesOrStrictly()) {
-                            if (shouldGiveUpRetry(fr)) {
-                                break; // give up and lose
-                            }
-                            enqueueFilteredExecutor(fr, filteredResults);
-                        }
-                    } catch (ExecutionException ex) {
-                        log.error("Could not to getting subscribe filter result.", ex);
-                        if (pipelineConfig.getFilter().getProcessProps().getQos().isMaxRetriesOrStrictly()) {
-                            if (shouldGiveUpRetry(fr)) {
-                                break; // give up and lose
-                            }
-                            enqueueFilteredExecutor(fr, filteredResults);
-
-                            // TODO re-add to filter executor queue?
-                            final Throwable rootCause = ExceptionUtils.getRootCause(ex);
-                            if (rootCause instanceof RuntimeException) {
-                                // TODO
-                            }
-                        }
-                    } finally {
-                        it.remove();
-                    }
-                    if (Objects.nonNull(matched) && matched) {
-                        // Send to filtered topic and add sent future.
-                        sentResults.add(doSendToFilteredAsync(fr.getRecord()));
-                    }
-                }
-            }
-            Thread.yield(); // May give up the CPU
-        }
-
-        // Flush all producers to ensure that all records in this batch are committed.
-        sentResults.stream().map(SentResult::getProducer).forEach(KafkaProducer::flush);
+        // Add timing filter sent metrics.
+        // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
+        final Timer filterSentTimer = addTimerMetrics(SubscribeMeter.MetricsName.filter_records_time,
+                pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+        final long filterSentBeginTime = System.nanoTime();
 
         // Wait for all filtered records to be sent completed.
         //
-        // Notice: Although it is best to support the config ‘bestQoS’ to the subscriber level, the current model
-        // of sharing the original data of the groupId can only support the whole batch.
+        // Consume the shared groupId from the original data topic, The purpose of this design is to adapt to the scenario
+        // of large message traffic, because if different groupIds are used to consume the original message, a large amount
+        // of COPY traffic may be generated before filtering, that is, bandwidth is wasted from Kafka broker to this Pod Kafka consumer.
         //
-        // The purpose of this design is to adapt to the scenario of large message traffic, because if different
-        // groupIds are used to consume the original message, a large amount of COPY traffic may be generated before
-        // filtering, that is, bandwidth is wasted from Kafka broker to this Pod Kafka consumer.
-        //
-        if (pipelineConfig.getFilter().getProcessProps().getQos().isMaxRetriesOrStrictly()) {
-            final long timeout = pipelineConfig.getFilter().getProcessProps().getCheckpointTimeout().toNanos();
-            final List<Future<RecordMetadata>> futures = sentResults.stream().map(SentResult::getFuture).collect(toList());
-            final long begin = System.nanoTime();
-            while (futures.stream().filter(Future::isDone).count() < futures.size()) {
-                Thread.yield(); // May give up the CPU
-                if ((System.nanoTime() - begin) > timeout) {
-                    if (pipelineConfig.getFilter().getProcessProps().getQos().isStrictly()) {
-                        log.error("Timeout sent to filtered kafka topic, shutdown...");
-                        // TODO re-add to filter executor queue for forever retry.
-                        // If the timeout is exceeded, the program will exit.
-                        //System.exit(1);
-                    } else {
-                        final List<JsonNode> recordValues = safeList(subscriberRecords).stream().map(SubscriberRecord::getRecord)
-                                .map(ConsumerRecord::value).collect(toList());
-                        log.error("Timeout sent to filtered kafka topic, fail fast has been disabled,"
-                                + "which is likely to result in loss of filtered data. - {}", recordValues);
+        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+            while (sentResults.size() > 0) {
+                final Iterator<SentResult> it = sentResults.iterator();
+                while (it.hasNext()) {
+                    final SentResult sr = it.next();
+                    // Notice: is done is not necessarily successful, both exception and cancellation will be done.
+                    if (sr.getFuture().isDone()) {
+                        RecordMetadata rm = null;
+                        try {
+                            rm = sr.getFuture().get();
+                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_success, sr.getRecord().getRecord().topic(),
+                                    sr.getRecord().getRecord().partition(), groupId);
+                        } catch (InterruptedException | CancellationException | ExecutionException ex) {
+                            log.error("Unable not to getting sent result.", ex);
+                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_failure, sr.getRecord().getRecord().topic(),
+                                    sr.getRecord().getRecord().partition(), groupId);
+                            if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
+                                break; // give up and lose
+                            }
+                            sentResults.add(doSendToFilteredAsync(sr.getRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
+                        } finally {
+                            it.remove();
+                        }
+                        log.debug("Sent to filtered record(metadata) result : {}", rm);
                     }
                 }
+                Thread.yield(); // May give up the CPU
             }
             try {
-                log.debug("Batch sent success and acknowledging ...");
+                log.debug("Batch sent acknowledging ...");
                 ack.acknowledge();
-                log.info("Sent success acknowledged.");
+                log.info("Sent acknowledged.");
             } catch (Throwable ex) {
                 log.error(String.format("Failed to sent success acknowledge for %s", ack), ex);
             }
@@ -204,22 +164,96 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                 ack.acknowledge();
                 log.info("Force to acknowledged.");
             } catch (Throwable ex) {
-                log.error(String.format("Failed to force acknowledge for %s", ack), ex);
+                log.error(String.format("Failed to sent force acknowledge for %s", ack), ex);
             }
         }
+
+        filterSentTimer.record(Duration.ofNanos(System.nanoTime() - filterSentBeginTime));
     }
 
-    /**
-     * Max retries then give up if it fails.
-     */
-    private boolean shouldGiveUpRetry(FilteredResult fr) {
-        return pipelineConfig.getFilter().getProcessProps().getQos().isMoseOnceOrMaxRetries()
-                && fr.getRetryTimes() > pipelineConfig.getFilter().getProcessProps().getQosMaxRetries();
+    private Set<SentResult> doParallelCustomFilterAndSendAsync(List<ConsumerRecord<String, ObjectNode>> records) {
+        // Match wrap to subscriber rules records.
+        final List<SubscriberRecord> subscriberRecords = matchWrapToSubscribesRecords(records);
+
+        // Add timing filter metrics.
+        // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
+        final Timer filterTimer = addTimerMetrics(SubscribeMeter.MetricsName.filter_records_time,
+                pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+        final long filterBeginTime = System.nanoTime();
+
+        // Execute custom filters in parallel them to different send executor queues.
+        final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
+                .map(sr -> new FilteredResult(sr, determineFilterExecutor(sr)
+                        .submit(() -> subscribeFilter.apply(sr)), System.nanoTime(), 1)).collect(toList());
+
+        Set<SentResult> sentResults = null;
+        if (pipelineConfig.getSink().isEnable()) {
+            sentResults = new HashSet<>(filteredResults.size());
+        } else {
+            log.info("Sink is disabled, skip to send filtered results to kafka. sr : {}", subscriberRecords);
+        }
+
+        // Wait for all parallel filtered results to be completed.
+        while (filteredResults.size() > 0) {
+            final Iterator<FilteredResult> it = filteredResults.iterator();
+            while (it.hasNext()) {
+                final FilteredResult fr = it.next();
+                // Notice: is done is not necessarily successful, both exception and cancellation will be done.
+                if (fr.getFuture().isDone()) {
+                    Boolean matched = null;
+                    try {
+                        matched = fr.getFuture().get();
+                        addCounterMetrics(SubscribeMeter.MetricsName.filter_records_success, fr.getRecord().getRecord().topic(),
+                                fr.getRecord().getRecord().partition(), groupId);
+                    } catch (InterruptedException | CancellationException ex) {
+                        log.error("Unable to getting subscribe filter result.", ex);
+                        addCounterMetrics(SubscribeMeter.MetricsName.filter_records_failure, fr.getRecord().getRecord().topic(),
+                                fr.getRecord().getRecord().partition(), groupId);
+                        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                            if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
+                                break; // give up and lose
+                            }
+                            enqueueFilteredExecutor(fr, filteredResults);
+                        }
+                    } catch (ExecutionException ex) {
+                        log.error("Unable not to getting subscribe filter result.", ex);
+                        final Throwable reason = ExceptionUtils.getRootCause(ex);
+                        // User needs to give up trying again.
+                        if (reason instanceof GiveUpRetryExecutionException) {
+                            log.warn("User ask to give up re-trying again filter. fr : {}, reason :{}", fr, reason.getMessage());
+                        } else {
+                            if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                                if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
+                                    break; // give up and lose
+                                }
+                                enqueueFilteredExecutor(fr, filteredResults);
+                            }
+                        }
+                    } finally {
+                        it.remove();
+                    }
+                    if (Objects.nonNull(matched) && matched) {
+                        // Send to filtered topic and add sent future If necessary.
+                        if (Objects.nonNull(sentResults)) {
+                            sentResults.add(doSendToFilteredAsync(fr.getRecord(), System.nanoTime(), 0));
+                        }
+                    }
+                }
+            }
+            Thread.yield(); // May give up the CPU
+        }
+        filterTimer.record(Duration.ofNanos(System.nanoTime() - filterBeginTime));
+
+        // Flush all producers to ensure that all records in this batch are committed.
+        safeList(sentResults).stream().map(SentResult::getProducer).forEach(KafkaProducer::flush);
+
+        return sentResults;
     }
 
     private void enqueueFilteredExecutor(FilteredResult fr, List<FilteredResult> filteredResults) {
+        log.info("Re-enqueue Requeue and retry filter execution. fr : {}", fr);
         filteredResults.add(new FilteredResult(fr.getRecord(), determineFilterExecutor(fr.getRecord())
-                .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryTimes() + 1));
+                .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
     }
 
     private List<SubscriberRecord> matchWrapToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
@@ -256,7 +290,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     /**
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
      */
-    private SentResult doSendToFilteredAsync(SubscriberRecord record) {
+    private SentResult doSendToFilteredAsync(SubscriberRecord record, long retryBegin, int retryTimes) {
         final SubscriberInfo subscriber = record.getSubscriber();
         final String key = record.getRecord().key();
         final ObjectNode value = record.getRecord().value();
@@ -269,7 +303,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         value.set("$$isSequence", BooleanNode.valueOf(subscriber.getIsSequence()));
 
         ProducerRecord<String, String> producerRecord = new ProducerRecord<String, String>(filteredTopic, key, value.asText());
-        return new SentResult(record, producer, producer.send(producerRecord));
+        return new SentResult(record, producer, producer.send(producerRecord), retryBegin, retryTimes);
     }
 
     private KafkaProducer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
@@ -312,20 +346,23 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     @Setter
     @AllArgsConstructor
     @ToString
-    public static class FilteredResult {
+    static class FilteredResult {
         private SubscriberRecord record;
         private Future<Boolean> future;
-        private int retryTimes = 0;
+        private long retryBegin;
+        private int retryTimes;
     }
 
     @Getter
     @Setter
     @AllArgsConstructor
     @ToString
-    public static class SentResult {
+    static class SentResult {
         private SubscriberRecord record;
         private KafkaProducer<String, String> producer;
         private Future<RecordMetadata> future;
+        private long retryBegin;
+        private int retryTimes;
 
         @Override
         public boolean equals(Object o) {

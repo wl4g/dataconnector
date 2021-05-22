@@ -105,7 +105,8 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
         config.getPipelines().forEach(pipeline -> {
             // Register filter dispatcher.
             final KafkaSubscriberProperties.SourceProperties source = pipeline.getSource();
-            final FilterBatchMessageDispatcher filterDispatcher = new FilterBatchMessageDispatcher(context, pipeline, subscribeFacade, subscriberRegistry);
+            final FilterBatchMessageDispatcher filterDispatcher = new FilterBatchMessageDispatcher(context, pipeline, subscribeFacade,
+                    subscriberRegistry, source.getGroupId());
             final ConcurrentMessageListenerContainer<String, String> filterSubscriber =
                     new KafkaConsumerBuilder(source.getConsumerProps())
                             .buildSubscriber(source.getTopicPattern(),
@@ -122,7 +123,8 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
                 log.info("Pipeline sink is disabled, skip register sink dispatcher, pipeline: {}", pipeline);
                 return;
             }
-            final SinkBatchMessageDispatcher sinkDispatcher = new SinkBatchMessageDispatcher(context, pipeline, subscribeFacade, subscriberRegistry);
+            final SinkBatchMessageDispatcher sinkDispatcher = new SinkBatchMessageDispatcher(context, pipeline, subscribeFacade,
+                    subscriberRegistry, sink.getGroupId());
             final ConcurrentMessageListenerContainer<String, String> sinkSubscriber =
                     new KafkaConsumerBuilder(sink.getConsumerProps())
                             .buildSubscriber(Pattern.compile(pipeline.getFilter().getTopicPrefix().concat(".*")),

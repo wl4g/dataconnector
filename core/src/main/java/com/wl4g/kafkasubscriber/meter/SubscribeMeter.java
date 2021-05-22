@@ -63,9 +63,17 @@ public class SubscribeMeter extends PrometheusMeterFacade {
 
         shared_consumed_time("shared_consumed_time", "The stats of shared consumed latency"),
 
-        filtered_records("filtered_records", "The stats of filtered records"),
+        filter_records_success("filter_records_success", "The stats of filter records success"),
 
-        filtered_time("filtered_time", "The stats of filtered consumed latency"),
+        filter_records_failure("filter_records_failure", "The stats of filter records failure"),
+
+        filter_records_time("filter_time", "The stats of filter latency"),
+
+        filter_records_sent_success("filter_records_sent", "The stats of filter records sent success"),
+
+        filter_records_sent_failure("filter_records_sent", "The stats of filter records sent failure"),
+
+        filter_records_sent_time("filter_time", "The stats of filter sent latency"),
 
         sink_records_success("sink_records_success", "The stats of sink records success"),
 
@@ -79,6 +87,7 @@ public class SubscribeMeter extends PrometheusMeterFacade {
 
     public static abstract class MetricsTag {
         public static final String TOPIC = "topic";
+        public static final String PARTITION = "partition";
         public static final String GROUP_ID = "groupId";
         public static final String SUBSCRIBE = "subscribe";
     }

@@ -60,17 +60,20 @@ public abstract class AbstractBatchMessageDispatcher
     protected final SubscriberRegistry subscriberRegistry;
     protected final ThreadPoolExecutor sharedNonSequenceExecutor;
     protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
+    protected final String groupId;
 
     public AbstractBatchMessageDispatcher(ApplicationContext context,
                                           KafkaSubscriberProperties.SubscribePipelineProperties config,
                                           KafkaSubscriberProperties.GenericProcessProperties processConfig,
                                           SubscribeFacade subscribeFacade,
-                                          SubscriberRegistry subscriberRegistry) {
+                                          SubscriberRegistry subscriberRegistry,
+                                          String groupId) {
         this.context = Assert2.notNullOf(context, "context");
         this.pipelineConfig = Assert2.notNullOf(config, "config");
         this.processConfig = Assert2.notNullOf(processConfig, "processConfig");
         this.subscribeFacade = Assert2.notNullOf(subscribeFacade, "subscribeFacade");
         this.subscriberRegistry = Assert2.notNullOf(subscriberRegistry, "subscriberRegistry");
+        this.groupId = Assert2.hasTextOf(groupId, "groupId");
 
         // Create the shared filter single executor.
         this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
@@ -121,30 +124,82 @@ public abstract class AbstractBatchMessageDispatcher
     @Override
     public void onMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
         try {
-            SubscribeMeter.getDefault().counter(
-                    SubscribeMeter.MetricsName.shared_consumed.getName(),
-                    SubscribeMeter.MetricsName.shared_consumed.getHelp(),
-                    SubscribeMeter.MetricsTag.TOPIC, pipelineConfig.getSource().getTopicPattern().toString(),
-                    SubscribeMeter.MetricsTag.GROUP_ID, pipelineConfig.getSource().getGroupId()
-            ).increment();
-            final Timer timer = SubscribeMeter.getDefault().timer(
-                    SubscribeMeter.MetricsName.shared_consumed_time.getName(),
-                    SubscribeMeter.MetricsName.shared_consumed_time.getHelp(),
-                    SubscribeMeter.DEFAULT_PERCENTILES,
-                    SubscribeMeter.MetricsTag.TOPIC, pipelineConfig.getSource().getTopicPattern().toString(),
-                    SubscribeMeter.MetricsTag.GROUP_ID, pipelineConfig.getSource().getGroupId()
-            );
+            addCounterMetrics(SubscribeMeter.MetricsName.shared_consumed,
+                    pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+
+            final Timer timer = addTimerMetrics(SubscribeMeter.MetricsName.shared_consumed_time,
+                    pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+
             timer.record(() -> doOnMessage(records, ack));
+
         } catch (Throwable ex) {
             log.error(String.format("Failed to process message. - %s", records), ex);
             // Commit directly if no quality of service is required.
-            if (processConfig.getQos().isMoseOnce()) {
+            if (processConfig.getCheckpointQoS().isMoseOnce()) {
                 ack.acknowledge();
             }
         }
     }
 
     protected abstract void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack);
+
+    /**
+     * Max retries then give up if it fails.
+     */
+    protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
+        return processConfig.getCheckpointQoS().isMoseOnceOrMaxRetries()
+                && (retryTimes > processConfig.getCheckpointQoSMaxRetries()
+                || (System.nanoTime() - retryBegin) > processConfig.getCheckpointQoSMaxRetriesTimeout().toNanos());
+    }
+
+    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
+        addCounterMetrics(metrics, topic, -1, groupId);
+    }
+
+    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, int partition, String groupId) {
+        if (partition > 0) {
+            SubscribeMeter.getDefault().counter(
+                    metrics.getName(),
+                    metrics.getHelp(),
+                    SubscribeMeter.MetricsTag.TOPIC, topic,
+                    SubscribeMeter.MetricsTag.PARTITION, String.valueOf(partition),
+                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
+            ).increment();
+        } else {
+            SubscribeMeter.getDefault().counter(
+                    metrics.getName(),
+                    metrics.getHelp(),
+                    SubscribeMeter.MetricsTag.TOPIC, topic,
+                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
+            ).increment();
+        }
+    }
+
+
+    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
+        return addTimerMetrics(metrics, topic, groupId);
+    }
+
+    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, int partition, String groupId) {
+        if (partition > 0) {
+            return SubscribeMeter.getDefault().timer(
+                    metrics.getName(),
+                    metrics.getHelp(),
+                    SubscribeMeter.DEFAULT_PERCENTILES,
+                    SubscribeMeter.MetricsTag.TOPIC, topic,
+                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
+            );
+        } else {
+            return SubscribeMeter.getDefault().timer(
+                    metrics.getName(),
+                    metrics.getHelp(),
+                    SubscribeMeter.DEFAULT_PERCENTILES,
+                    SubscribeMeter.MetricsTag.TOPIC, topic,
+                    SubscribeMeter.MetricsTag.PARTITION, String.valueOf(partition),
+                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
+            );
+        }
+    }
 
 }
 

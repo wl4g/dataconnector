@@ -19,7 +19,7 @@ package com.wl4g.kafkasubscriber.config;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
-import com.wl4g.kafkasubscriber.sink.DefaultSubscribeSink;
+import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -172,20 +172,20 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
         private @Builder.Default boolean executorWarmUp = true;
-        private @Builder.Default Qos qos = Qos.MAX_RETRIES;
-        private @Builder.Default int qosMaxRetries = 5;
+        private @Builder.Default CheckpointQoS checkpointQoS = CheckpointQoS.MAX_RETRIES;
+        private @Builder.Default int checkpointQoSMaxRetries = 5;
+        private @Builder.Default Duration checkpointQoSMaxRetriesTimeout = Duration.ofHours(6);
         private @Builder.Default int checkpointProducerMaxCountLimit = 10;
-        private @Builder.Default Duration checkpointTimeout = Duration.ofHours(6);
 
         public void validate() {
             Assert2.isTrueOf(sharedExecutorThreadPoolSize > 0, "sharedExecutorThreadPoolSize > 0");
             Assert2.isTrueOf(sharedExecutorQueueSize > 0, "sharedExecutorQueueSize > 0");
             Assert2.isTrueOf(sequenceExecutorsMaxCountLimit > 0, "sequenceExecutorsMaxCountLimit > 0");
             Assert2.isTrueOf(sequenceExecutorsPerQueueSize > 0, "sequenceExecutorsPerQueueSize > 0");
-            Assert2.notNullOf(qos, "qos");
-            Assert2.isTrueOf(qosMaxRetries > 0, "qosMaxRetries > 0");
+            Assert2.notNullOf(checkpointQoS, "qos");
+            Assert2.isTrueOf(checkpointQoSMaxRetries > 0, "qosMaxRetries > 0");
             Assert2.isTrueOf(checkpointProducerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
-            Assert2.isTrueOf(checkpointTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
+            Assert2.isTrueOf(checkpointQoSMaxRetriesTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
         }
     }
 
@@ -226,7 +226,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
         }
     }
 
-    public static enum Qos {
+    public static enum CheckpointQoS {
         /**
          * 0: Execute only once and give up if it fails.
          */
@@ -260,11 +260,11 @@ public class KafkaSubscriberProperties implements InitializingBean {
             return isMaxRetries() || isStrictly();
         }
 
-        public boolean isAnd(Qos... qos) {
+        public boolean isAnd(CheckpointQoS... qos) {
             return Arrays.stream(qos).allMatch(this::equals);
         }
 
-        public boolean isOr(Qos... qos) {
+        public boolean isOr(CheckpointQoS... qos) {
             return Arrays.asList(qos).contains(this);
         }
 
@@ -275,7 +275,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     public static class SinkProperties extends BaseConsumerProperties {
-        private @Builder.Default String customSinkBeanName = DefaultSubscribeSink.BEAN_NAME;
+        private @Builder.Default String customSinkBeanName = DefaultPrintSubscribeSink.BEAN_NAME;
         private @Builder.Default boolean enable = true;
         private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
 

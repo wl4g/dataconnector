@@ -14,20 +14,31 @@
  * limitations under the License.
  */
 
-package com.wl4g.kafkasubscriber.sink;
+package com.wl4g.kafkasubscriber.exception;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import java.util.concurrent.ExecutionException;
 
 /**
- * The {@link ISubscribeSink}
+ * The {@link GiveUpRetryExecutionException}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeSink {
-    SinkBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
-                                                    boolean sequence,
-                                                    ConsumerRecord<String, ObjectNode> record);
+public class GiveUpRetryExecutionException extends ExecutionException {
+
+    protected GiveUpRetryExecutionException() {
+    }
+
+    protected GiveUpRetryExecutionException(String message) {
+        super(message);
+    }
+
+    public GiveUpRetryExecutionException(String message, Throwable cause) {
+        super(message, cause);
+    }
+
+    public GiveUpRetryExecutionException(Throwable cause) {
+        super(cause);
+    }
+
 }

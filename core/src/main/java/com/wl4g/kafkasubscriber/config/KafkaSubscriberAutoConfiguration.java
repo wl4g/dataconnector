@@ -25,7 +25,7 @@ import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.DefaultSubscribeSink;
+import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -98,10 +98,10 @@ public class KafkaSubscriberAutoConfiguration {
         return new DefaultRecordMatchSubscribeFilter();
     }
 
-    @Bean(DefaultSubscribeSink.BEAN_NAME)
+    @Bean(DefaultPrintSubscribeSink.BEAN_NAME)
     @ConditionalOnMissingBean
     public ISubscribeSink defaultSubscriberSink() {
-        return new DefaultSubscribeSink();
+        return new DefaultPrintSubscribeSink();
     }
 
     @Bean

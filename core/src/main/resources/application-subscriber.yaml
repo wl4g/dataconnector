@@ -11,7 +11,6 @@
 # #### Environment Subscriber configuration. ####
 #
 
-
 kafka-subscriber:
   bases:
     consumerProps: &baseConsumerProps
@@ -62,10 +61,10 @@ kafka-subscriber:
       sequenceExecutorsMaxCountLimit: 100
       sequenceExecutorsPerQueueSize: 100
       executorWarmUp: true
-      qos: 1 # 0:MOST_ONCE|1:MAX_RETRIES|2:STRICTLY
-      qosMaxRetries: 5
+      checkpointQoS: 1 # 0:MOST_ONCE|1:MAX_RETRIES|2:STRICTLY
+      checkpointQoSMaxRetries: 5
+      checkpointQoSMaxRetriesTimeout: 6h
       checkpointProducerMaxCountLimit: 100
-      checkpointTimeout: 6h
 
   pipelines:
     - source:
