@@ -18,7 +18,7 @@ package com.wl4g.kafkasubscriber.util.expression;
 
 import com.wl4g.infra.common.serialize.JacksonUtils;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * The {@link AviatorFunctionTests}

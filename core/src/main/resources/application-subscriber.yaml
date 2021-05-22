@@ -75,8 +75,8 @@ kafka-subscriber:
           group.id: "shared_source_0"
           <<: *baseConsumerProps
       filter:
-        #customSinkBeanName: # By default: defaultRecordMatchSubscribeFilter
-        topicPrefix: "filtered_"
+        topicPrefix: "shared_filtered_"
+        customFilterBeanName: defaultRecordMatchSubscribeFilter # By default: defaultRecordMatchSubscribeFilter
         processProps:
           <<: *baseProcessProps
         producerProps:
@@ -90,25 +90,29 @@ kafka-subscriber:
           compression.type: gzip
       sink:
         enable: true
-        #customSinkBeanName: # By default: defaultSubscribeSink
+        groupIdPrefix: "isolation_sink_"
+        customSinkBeanName: defaultSubscribeSink # By default: defaultSubscribeSink
         parallelism: 2
         consumerProps:
           bootstrap.servers: "localhost:9092"
-          group.id: "filtered_sink_0"
+          #group.id:
           <<: *baseConsumerProps
         processProps:
           <<: *baseProcessProps
 
+  ## Notice: The following configuration method is usually used in experimental scenarios to
+  ## define the subscriber list. When integrating into actual business applications, the interface
+  ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
   subscribers:
     - id: 0
       name: "subscriber_0"
       enable: true
-      condition:
-      brokerConnect:
       isSequence: false
+      properties:
+        defaultRecordMatchSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"a >= 1 && b <= 2"}}'
     - id: 1
       name: "subscriber_1"
       enable: true
-      condition:
-      brokerConnect:
       isSequence: true
+      properties:
+        defaultRecordMatchSubscribeFilter: '{"type":"LOGICAL","name":"testCondition3","logical":"AND","subConditions":[{"type":"RELATION","name":"testCondition1","fn":{"expression":"a >= 1 && b <= 2"}},{"type":"RELATION","name":"testCondition2","fn":{"expression":"a >= 5"}}]}'

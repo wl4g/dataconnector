@@ -22,6 +22,7 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
@@ -36,6 +37,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -104,19 +106,19 @@ public abstract class AbstractBatchMessageDispatcher
     @Override
     public void close() throws IOException {
         try {
-            log.info("Closing shared non filter executor...");
+            log.info("{} :: Closing shared non filter executor...", groupId);
             this.sharedNonSequenceExecutor.shutdown();
-            log.info("Closed shared non filter executor.");
+            log.info("{} :: Closed shared non filter executor.", groupId);
         } catch (Throwable ex) {
-            log.error("Failed to close shared filter executor.", ex);
+            log.error(String.format("%s :: Failed to close shared filter executor.", groupId), ex);
         }
         this.isolationSequenceExecutors.forEach(executor -> {
             try {
-                log.info("Closing filter executor {}...", executor);
+                log.info("{} :: Closing filter executor {}...", groupId, executor);
                 executor.shutdown();
-                log.info("Closed filter executor {}.", executor);
+                log.info("{} :: Closed filter executor {}.", groupId, executor);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to close filter executor %s.", executor), ex);
+                log.error(String.format("%s :: Failed to close filter executor %s.", groupId, executor), ex);
             }
         });
     }
@@ -133,7 +135,7 @@ public abstract class AbstractBatchMessageDispatcher
             timer.record(() -> doOnMessage(records, ack));
 
         } catch (Throwable ex) {
-            log.error(String.format("Failed to process message. - %s", records), ex);
+            log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
             if (processConfig.getCheckpointQoS().isMoseOnce()) {
                 ack.acknowledge();
@@ -142,6 +144,19 @@ public abstract class AbstractBatchMessageDispatcher
     }
 
     protected abstract void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack);
+
+    protected ThreadPoolExecutor determineTaskExecutor(Long subscriberId, boolean isSequence, String key) {
+        ThreadPoolExecutor executor = this.sharedNonSequenceExecutor;
+        if (isSequence) {
+            //final int mod = (int) subscriber.getId();
+            final int mod = (int) Crc32Util.compute(key);
+            final int index = isolationSequenceExecutors.size() % mod;
+            executor = isolationSequenceExecutors.get(index);
+            log.debug("{} :: {} :: determined isolation sequence executor index : {}, mod : {}",
+                    groupId, subscriberId, index, mod);
+        }
+        return executor;
+    }
 
     /**
      * Max retries then give up if it fails.
@@ -153,52 +168,54 @@ public abstract class AbstractBatchMessageDispatcher
     }
 
     protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
-        addCounterMetrics(metrics, topic, -1, groupId);
+        addCounterMetrics(metrics, topic, null, groupId);
     }
 
-    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, int partition, String groupId) {
-        if (partition > 0) {
-            SubscribeMeter.getDefault().counter(
-                    metrics.getName(),
-                    metrics.getHelp(),
-                    SubscribeMeter.MetricsTag.TOPIC, topic,
-                    SubscribeMeter.MetricsTag.PARTITION, String.valueOf(partition),
-                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
-            ).increment();
-        } else {
-            SubscribeMeter.getDefault().counter(
-                    metrics.getName(),
-                    metrics.getHelp(),
-                    SubscribeMeter.MetricsTag.TOPIC, topic,
-                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
-            ).increment();
+    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic,
+                                     Integer partition, String groupId) {
+        addCounterMetrics(metrics, null, topic, partition, groupId);
+    }
+
+    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, Long subscriberId,
+                                     String topic, Integer partition, String groupId) {
+        final List<String> tags = new ArrayList<>(8);
+        tags.add(SubscribeMeter.MetricsTag.TOPIC);
+        tags.add(topic);
+        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
+        tags.add(groupId);
+        if (Objects.nonNull(subscriberId)) {
+            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
+            tags.add(String.valueOf(subscriberId));
         }
+        if (Objects.nonNull(partition)) {
+            tags.add(SubscribeMeter.MetricsTag.PARTITION);
+            tags.add(String.valueOf(partition));
+        }
+        SubscribeMeter.getDefault().counter(metrics.getName(), metrics.getHelp(), tags.toArray(new String[0])).increment();
     }
-
 
     protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
-        return addTimerMetrics(metrics, topic, groupId);
+        return addTimerMetrics(metrics, null, topic, null, groupId);
     }
 
-    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, int partition, String groupId) {
-        if (partition > 0) {
-            return SubscribeMeter.getDefault().timer(
-                    metrics.getName(),
-                    metrics.getHelp(),
-                    SubscribeMeter.DEFAULT_PERCENTILES,
-                    SubscribeMeter.MetricsTag.TOPIC, topic,
-                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
-            );
-        } else {
-            return SubscribeMeter.getDefault().timer(
-                    metrics.getName(),
-                    metrics.getHelp(),
-                    SubscribeMeter.DEFAULT_PERCENTILES,
-                    SubscribeMeter.MetricsTag.TOPIC, topic,
-                    SubscribeMeter.MetricsTag.PARTITION, String.valueOf(partition),
-                    SubscribeMeter.MetricsTag.GROUP_ID, groupId
-            );
+    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, Long subscriberId, String topic,
+                                    Integer partition, String groupId) {
+        final List<String> tags = new ArrayList<>(8);
+        tags.add(SubscribeMeter.MetricsTag.TOPIC);
+        tags.add(topic);
+        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
+        tags.add(groupId);
+        if (Objects.nonNull(subscriberId)) {
+            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
+            tags.add(String.valueOf(subscriberId));
         }
+        if (Objects.nonNull(partition)) {
+            tags.add(SubscribeMeter.MetricsTag.PARTITION);
+            tags.add(String.valueOf(partition));
+        }
+        final String[] tagArray = tags.toArray(new String[0]);
+        return SubscribeMeter.getDefault().timer(metrics.getName(), metrics.getHelp(),
+                SubscribeMeter.DEFAULT_PERCENTILES, tagArray);
     }
 
 }

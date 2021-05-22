@@ -16,14 +16,10 @@
 
 package com.wl4g.kafkasubscriber.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.Getter;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
@@ -34,7 +30,6 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -66,23 +61,23 @@ public class KafkaConsumerBuilder {
     }
 
     public ConcurrentMessageListenerContainer<String, String> buildSubscriber(
-            final @NotBlank Pattern topicPattern,
+            final @NotNull Pattern topicPattern,
+            final @NotBlank String groupId,
             final @NotNull BatchAcknowledgingMessageListener<String, String> listener) {
         // force: min(concurrency, topicPartitions.length)
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         // But it's a pity that spring doesn't get it dynamically from broker.
         // Therefore, tuning must still be set manually, generally equal to the number of partitions.
-        return buildSubscriber(topicPattern, Integer.MAX_VALUE, listener);
+        return buildSubscriber(topicPattern, groupId, Integer.MAX_VALUE, listener);
     }
 
     public ConcurrentMessageListenerContainer<String, String> buildSubscriber(
-            final @NotBlank Pattern topicPattern,
+            final @NotNull Pattern topicPattern,
+            final @NotBlank String groupId,
             final @NotNull Integer concurrency,
             final @NotNull Object listener) {
         notNullOf(topicPattern, "topicPattern");
         notNullOf(listener, "listener");
-        final String groupId = notNullOf(consumerProps.get(ConsumerConfig.GROUP_ID_CONFIG), "groupId");
-
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         final ConcurrentMessageListenerContainer<String, String> container = factory.createContainer(topicPattern);
         // see:org.springframework.kafka.listener.KafkaMessageListenerContainer.ListenerConsumer#doInvokeOnMessage()

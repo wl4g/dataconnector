@@ -34,17 +34,26 @@ public interface SubscribeFacade {
 
     List<SubscriberInfo> findSubscribers(@Null SubscriberInfo query);
 
-    boolean matchSubscriberRecord(@Null SubscriberInfo subscriber,
-                                  @Null ConsumerRecord<String, ObjectNode> record);
-
-    default String generateFilteredTopic(@Null KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                         @Null SubscriberInfo subscriber) {
-        return generateFilteredTopic(config, subscriber.getId());
+    default boolean matchSubscriberRecord(@Null SubscriberInfo subscriber,
+                                          @Null ConsumerRecord<String, ObjectNode> record) {
+        // Notice: By default, the $subscriberId field of the source message match, which should be customized
+        // to match the subscriber relationship corresponding to each record in the source consume topic.
+        return record.value().get("$subscriberId").asLong(-1L) == subscriber.getId();
     }
 
-    default String generateFilteredTopic(@Null KafkaSubscriberProperties.SubscribePipelineProperties config,
+    default String generateFilteredTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
+                                         @Null SubscriberInfo subscriber) {
+        return generateFilteredTopic(filterConfig, subscriber.getId());
+    }
+
+    default String generateFilteredTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
                                          @Null Long subscriberId) {
-        return config.getFilter().getTopicPrefix().concat("-").concat(String.valueOf(subscriberId));
+        return filterConfig.getTopicPrefix().concat("-").concat(String.valueOf(subscriberId));
+    }
+
+    default String generateSinkGroupId(@Null KafkaSubscriberProperties.SinkProperties sinkConfig,
+                                       @Null Long subscriberId) {
+        return sinkConfig.getGroupIdPrefix().concat("-").concat(String.valueOf(subscriberId));
     }
 
 }

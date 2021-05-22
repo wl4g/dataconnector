@@ -132,14 +132,10 @@ public class KafkaSubscriberProperties implements InitializingBean {
             }
         };
 
-        public String getGroupId() {
-            return (String) consumerProps.get(ConsumerConfig.GROUP_ID_CONFIG);
-        }
 
         public void validate() {
             Assert2.isTrueOf(parallelism > 0, "parallelism > 0");
             Assert2.notNullOf(consumerProps.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
-            Assert2.notNullOf(consumerProps.get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
         }
     }
 
@@ -158,6 +154,11 @@ public class KafkaSubscriberProperties implements InitializingBean {
         public void validate() {
             super.validate();
             Assert2.notNullOf(topicPattern, "topicPattern");
+            Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
+        }
+
+        public String getGroupId() {
+            return (String) getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG);
         }
     }
 
@@ -195,7 +196,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static class FilterProperties {
-        private @Builder.Default String topicPrefix = "filtered-";
+        private @Builder.Default String topicPrefix = "shared_filtered_";
         private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
         private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
         private @Builder.Default Map<String, String> producerProps = new HashMap<String, String>(4) {
@@ -273,20 +274,20 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Getter
     @Setter
     @SuperBuilder
+    @NoArgsConstructor
     @ToString
     public static class SinkProperties extends BaseConsumerProperties {
+        private @Builder.Default String groupIdPrefix = "isolation_sink_";
         private @Builder.Default String customSinkBeanName = DefaultPrintSubscribeSink.BEAN_NAME;
         private @Builder.Default boolean enable = true;
         private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
 
-        public SinkProperties() {
-            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "filtered_sink_".concat(LOCAL_PROCESS_ID));
-        }
-
         public void validate() {
             super.validate();
-            this.processProps.validate();
+            Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
+            Assert2.hasTextOf(customSinkBeanName, "customSinkBeanName");
             Assert2.notNullOf(enable, "enable");
+            getProcessProps().validate();
         }
     }
 

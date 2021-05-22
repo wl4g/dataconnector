@@ -14,20 +14,28 @@
  * limitations under the License.
  */
 
-package com.wl4g.kafkasubscriber.sink;
+package com.wl4g.kafkasubscriber;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * The {@link ISubscribeSink}
+ * The {@link KafkaTopicInitializingIT}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeSink {
-    SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
-                                                              boolean sequence,
-                                                              ConsumerRecord<String, ObjectNode> record);
+public class KafkaTopicInitializingIT {
+
+    public static void main(String[] args) {
+        System.out.println("Integration Test kafka topic initializing ...");
+        startProduceMockTestTopic();
+    }
+
+    static void startProduceMockTestTopic() {
+        new Thread(KafkaTopicInitializingIT::doProduceSendToTopic).start();
+    }
+
+    static void doProduceSendToTopic() {
+        System.out.println();
+    }
+
 }

@@ -16,6 +16,7 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaConsumerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
@@ -31,10 +32,10 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
 
 /**
@@ -105,35 +106,31 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
         config.getPipelines().forEach(pipeline -> {
             // Register filter dispatcher.
             final KafkaSubscriberProperties.SourceProperties source = pipeline.getSource();
-            final FilterBatchMessageDispatcher filterDispatcher = new FilterBatchMessageDispatcher(context, pipeline, subscribeFacade,
-                    subscriberRegistry, source.getGroupId());
-            final ConcurrentMessageListenerContainer<String, String> filterSubscriber =
-                    new KafkaConsumerBuilder(source.getConsumerProps())
-                            .buildSubscriber(source.getTopicPattern(),
-                                    source.getParallelism(),
-                                    filterDispatcher);
-            if (Objects.nonNull(filterSubscribers.putIfAbsent(source.getGroupId(), filterSubscriber))) {
-                throw new IllegalStateException(
-                        String.format("Duplicate filter subscriber group id: %s", source.getGroupId()));
-            }
+            filterSubscribers.computeIfAbsent(source.getGroupId(), sourceGroupId -> {
+                final FilterBatchMessageDispatcher filterDispatcher = new FilterBatchMessageDispatcher(context, pipeline, subscribeFacade,
+                        subscriberRegistry, source.getGroupId());
+                return new KafkaConsumerBuilder(source.getConsumerProps())
+                        .buildSubscriber(source.getTopicPattern(), sourceGroupId, source.getParallelism(), filterDispatcher);
+            });
 
-            // Register sink dispatcher.
+            // Register sink dispatchers If necessary. (per subscribers a sink dispatcher instance)
             final KafkaSubscriberProperties.SinkProperties sink = pipeline.getSink();
             if (!sink.isEnable()) {
                 log.info("Pipeline sink is disabled, skip register sink dispatcher, pipeline: {}", pipeline);
                 return;
             }
-            final SinkBatchMessageDispatcher sinkDispatcher = new SinkBatchMessageDispatcher(context, pipeline, subscribeFacade,
-                    subscriberRegistry, sink.getGroupId());
-            final ConcurrentMessageListenerContainer<String, String> sinkSubscriber =
-                    new KafkaConsumerBuilder(sink.getConsumerProps())
-                            .buildSubscriber(Pattern.compile(pipeline.getFilter().getTopicPrefix().concat(".*")),
-                                    sink.getParallelism(),
-                                    sinkDispatcher);
-            if (Objects.nonNull(sinkSubscribers.putIfAbsent(sink.getGroupId(), sinkSubscriber))) {
-                throw new IllegalStateException(
-                        String.format("Duplicate sink subscriber group id: %s", sink.getGroupId()));
-            }
+            // TODO using subscriber registry to find subscribers.
+            safeList(subscribeFacade.findSubscribers(SubscriberInfo.builder().build())).forEach(subscriber -> {
+                subscriber.validate();
+                final String sinkFromTopic = subscribeFacade.generateFilteredTopic(pipeline.getFilter(), subscriber.getId());
+                final String sinkGroupId = subscribeFacade.generateSinkGroupId(sink, subscriber.getId());
+                sinkSubscribers.computeIfAbsent(sinkGroupId, _sinkGroupId -> {
+                    final SinkSubscriberBatchMessageDispatcher sinkDispatcher = new SinkSubscriberBatchMessageDispatcher(context, pipeline, subscribeFacade,
+                            subscriberRegistry, _sinkGroupId, subscriber);
+                    return new KafkaConsumerBuilder(sink.getConsumerProps())
+                            .buildSubscriber(Pattern.compile(sinkFromTopic), _sinkGroupId, sink.getParallelism(), sinkDispatcher);
+                });
+            });
         });
     }
 

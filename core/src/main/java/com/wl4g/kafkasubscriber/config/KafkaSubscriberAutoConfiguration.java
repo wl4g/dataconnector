@@ -61,13 +61,6 @@ public class KafkaSubscriberAutoConfiguration {
             public List<SubscriberInfo> findSubscribers(SubscriberInfo query) {
                 return config.getSubscribers();
             }
-
-            @Override
-            public boolean matchSubscriberRecord(SubscriberInfo subscriber, ConsumerRecord<String, ObjectNode> record) {
-                // Notice: By default, the $subscriberId field of the source message match, which should be customized
-                // to match the subscriber relationship corresponding to each record in the source consume topic.
-                return record.value().get("$subscriberId").asLong(-1L) == subscriber.getId();
-            }
         };
     }
 

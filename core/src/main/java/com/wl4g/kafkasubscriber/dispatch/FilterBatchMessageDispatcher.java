@@ -79,7 +79,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
     @Override
-    public void afterPropertiesSet() throws Exception {
+    public void afterPropertiesSet() {
         // Create custom subscribe filter. (Each processing pipeline uses different custom filter instances)
         this.subscribeFilter = obtainSubscribeFilter();
     }
@@ -89,11 +89,11 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         super.close();
         this.filteredCheckpointProducers.forEach(producer -> {
             try {
-                log.info("Closing kafka producer {}...", producer);
+                log.info("{} :: Closing kafka producer {}...", groupId, producer);
                 producer.close();
-                log.info("Closed kafka producer {}.", producer);
+                log.info("{} :: Closed kafka producer {}.", groupId, producer);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to close kafka producer %s.", producer), ex);
+                log.error(String.format("%s :: Failed to close kafka producer %s.", groupId, producer), ex);
             }
         });
     }
@@ -108,6 +108,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
         // If the sending result set is empty, it indicates that checkpoint produce is not enabled and send to the kafka filtered topic.
         if (Objects.isNull(sentResults)) {
+            try {
+                log.debug("{} :: Sink is disabled, skip sent acknowledge... records : {}",
+                        groupId, records);
+                ack.acknowledge();
+                log.info("{} :: Skip sent force to acknowledged.", groupId);
+            } catch (Throwable ex) {
+                log.error(String.format("%s :: Failed to skip sent acknowledge for %s", groupId, ack), ex);
+            }
             return;
         }
 
@@ -133,38 +141,42 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                         RecordMetadata rm = null;
                         try {
                             rm = sr.getFuture().get();
-                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_success, sr.getRecord().getRecord().topic(),
+                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_success,
+                                    sr.getRecord().getRecord().topic(),
                                     sr.getRecord().getRecord().partition(), groupId);
                         } catch (InterruptedException | CancellationException | ExecutionException ex) {
-                            log.error("Unable not to getting sent result.", ex);
-                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_failure, sr.getRecord().getRecord().topic(),
+                            log.error("{} :: Unable not to getting sent result.", groupId, ex);
+                            addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_failure,
+                                    sr.getRecord().getRecord().topic(),
                                     sr.getRecord().getRecord().partition(), groupId);
                             if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                 break; // give up and lose
                             }
-                            sentResults.add(doSendToFilteredAsync(sr.getRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
+                            sentResults.add(doSendToFilteredAsync(sr.getRecord(), sr.getRetryBegin(),
+                                    sr.getRetryTimes() + 1));
                         } finally {
                             it.remove();
                         }
-                        log.debug("Sent to filtered record(metadata) result : {}", rm);
+                        log.debug("{} :: Sent to filtered record(metadata) result : {}", groupId, rm);
                     }
                 }
                 Thread.yield(); // May give up the CPU
             }
             try {
-                log.debug("Batch sent acknowledging ...");
+                log.debug("{} ;: Batch sent acknowledging ...", groupId);
                 ack.acknowledge();
-                log.info("Sent acknowledged.");
+                log.info("{} :: Sent acknowledged.", groupId);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to sent success acknowledge for %s", ack), ex);
+                log.error(String.format("%s :: Failed to sent success acknowledge for %s", groupId, ack), ex);
             }
         } else {
             try {
-                log.debug("Batch regardless of success or failure force acknowledging ...");
+                log.debug("{} :: Batch regardless of success or failure force acknowledging ...", groupId);
                 ack.acknowledge();
-                log.info("Force to acknowledged.");
+                log.info("{} :: Force sent to acknowledged.", groupId);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to sent force acknowledge for %s", ack), ex);
+                log.error(String.format("%s :: Failed to sent force acknowledge for %s",
+                        groupId, ack), ex);
             }
         }
 
@@ -173,7 +185,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     private Set<SentResult> doParallelCustomFilterAndSendAsync(List<ConsumerRecord<String, ObjectNode>> records) {
         // Match wrap to subscriber rules records.
-        final List<SubscriberRecord> subscriberRecords = matchWrapToSubscribesRecords(records);
+        final List<SubscriberRecord> subscriberRecords = matchToSubscribesRecords(records);
 
         // Add timing filter metrics.
         // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
@@ -190,7 +202,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         if (pipelineConfig.getSink().isEnable()) {
             sentResults = new HashSet<>(filteredResults.size());
         } else {
-            log.info("Sink is disabled, skip to send filtered results to kafka. sr : {}", subscriberRecords);
+            log.info("{} :: Sink is disabled, skip to send filtered results to kafka. sr : {}",
+                    groupId, subscriberRecords);
         }
 
         // Wait for all parallel filtered results to be completed.
@@ -206,7 +219,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                         addCounterMetrics(SubscribeMeter.MetricsName.filter_records_success, fr.getRecord().getRecord().topic(),
                                 fr.getRecord().getRecord().partition(), groupId);
                     } catch (InterruptedException | CancellationException ex) {
-                        log.error("Unable to getting subscribe filter result.", ex);
+                        log.error("{} :: Unable to getting subscribe filter result.", groupId, ex);
                         addCounterMetrics(SubscribeMeter.MetricsName.filter_records_failure, fr.getRecord().getRecord().topic(),
                                 fr.getRecord().getRecord().partition(), groupId);
                         if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
@@ -216,11 +229,12 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                             enqueueFilteredExecutor(fr, filteredResults);
                         }
                     } catch (ExecutionException ex) {
-                        log.error("Unable not to getting subscribe filter result.", ex);
+                        log.error("{} :: Unable not to getting subscribe filter result.", groupId, ex);
                         final Throwable reason = ExceptionUtils.getRootCause(ex);
                         // User needs to give up trying again.
                         if (reason instanceof GiveUpRetryExecutionException) {
-                            log.warn("User ask to give up re-trying again filter. fr : {}, reason :{}", fr, reason.getMessage());
+                            log.warn("{} :: User ask to give up re-trying again filter. fr : {}, reason : {}",
+                                    groupId, fr, reason.getMessage());
                         } else {
                             if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
                                 if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
@@ -251,18 +265,24 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
     private void enqueueFilteredExecutor(FilteredResult fr, List<FilteredResult> filteredResults) {
-        log.info("Re-enqueue Requeue and retry filter execution. fr : {}", fr);
+        log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
         filteredResults.add(new FilteredResult(fr.getRecord(), determineFilterExecutor(fr.getRecord())
                 .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
     }
 
-    private List<SubscriberRecord> matchWrapToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
+    private List<SubscriberRecord> matchToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
         final List<SubscriberInfo> subscribers = subscribeFacade.findSubscribers(SubscriberInfo.builder().build());
+
+        // Merge subscription server configurations and update to filters.
+        // Notice: According to the consumption filtering model design, it is necessary to share groupId
+        // consumption for unified processing, So here, all subscriber filtering rules should be merged.
+        this.subscribeFilter.updateConfigWithMergeSubscribers(subscribers);
+
         return records.stream().map(r -> safeList(subscribers).stream()
-                .filter(s -> subscribeFacade.matchSubscriberRecord(s, r))
-                .limit(1).findFirst().map(s -> new SubscriberRecord(s, r))
-                .orElseGet(() -> {
-                    log.warn(String.format("No matched subscriber for record : %s", r));
+                .filter(s -> subscribeFacade.matchSubscriberRecord(s, r)).limit(1)
+                .findFirst()
+                .map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
+                    log.warn(String.format("%s :: No matched subscriber for record : %s", groupId, r));
                     return null;
                 })).filter(Objects::nonNull).collect(toList());
     }
@@ -270,20 +290,15 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
         final SubscriberInfo subscriber = record.getSubscriber();
         final String key = record.getRecord().key();
-        if (subscriber.getIsSequence()) {
-            //final int mod = (int) subscriber.getId();
-            final int mod = (int) Crc32Util.compute(key);
-            return isolationSequenceExecutors.get(Math.abs((int) (isolationSequenceExecutors.size() % mod)));
-        } else {
-            return sharedNonSequenceExecutor;
-        }
+        return determineTaskExecutor(subscriber.getId(), subscriber.getIsSequence(), key);
     }
 
     private ISubscribeFilter obtainSubscribeFilter() {
         try {
             return context.getBean(pipelineConfig.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
         } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom subscriber filter of bean %s", pipelineConfig.getFilter().getCustomFilterBeanName()));
+            throw new IllegalStateException(String.format("%s :: Could not getting custom subscriber filter of bean %s",
+                    groupId, pipelineConfig.getFilter().getCustomFilterBeanName()));
         }
     }
 
@@ -296,14 +311,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         final ObjectNode value = record.getRecord().value();
 
         final KafkaProducer<String, String> producer = determineKafkaProducer(subscriber, key);
-        final String filteredTopic = subscribeFacade.generateFilteredTopic(pipelineConfig, subscriber);
+        final String filteredTopic = subscribeFacade.generateFilteredTopic(pipelineConfig.getFilter(), subscriber);
 
         // Notice: Hand down the subscriber metadata of each record to the downstream.
         value.set("$$subscriberId", LongNode.valueOf(subscriber.getId()));
         value.set("$$isSequence", BooleanNode.valueOf(subscriber.getIsSequence()));
 
-        ProducerRecord<String, String> producerRecord = new ProducerRecord<String, String>(filteredTopic, key, value.asText());
-        return new SentResult(record, producer, producer.send(producerRecord), retryBegin, retryTimes);
+        final ProducerRecord<String, String> _record = new ProducerRecord<>(filteredTopic, key, value.asText());
+        return new SentResult(record, producer, producer.send(_record), retryBegin, retryTimes);
     }
 
     private KafkaProducer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
@@ -311,12 +326,17 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         if (subscriber.getIsSequence()) {
             //final int mod = (int) subscriber.getId();
             final int mod = (int) Crc32Util.compute(key);
-            producer = filteredCheckpointProducers.get(filteredCheckpointProducers.size() % mod);
+            final int index = filteredCheckpointProducers.size() % mod;
+            producer = filteredCheckpointProducers.get(index);
+            log.debug("{} :: determined send isolation sequence producer index : {}, mod : {}, subscriber : {}",
+                    groupId, index, mod, subscriber.getId());
         }
         if (Objects.isNull(producer)) {
-            throw new IllegalStateException(String.format("Could not getting producer by subscriber: %s, key: %s", subscriber.getId(), key));
+            throw new IllegalStateException(String.format("%s :: Could not getting producer by subscriber: %s, key: %s",
+                    groupId, subscriber.getId(), key));
         }
-        log.debug("Using kafka producer by subscriber: {}, key: {}", subscriber.getId(), key);
+        log.debug("{} :: Using kafka producer by subscriber: {}, key: {}",
+                groupId, subscriber.getId(), key);
         return producer;
     }
 

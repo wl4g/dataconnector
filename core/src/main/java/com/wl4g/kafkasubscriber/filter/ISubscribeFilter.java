@@ -16,8 +16,10 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -27,4 +29,5 @@ import java.util.function.Function;
  * @since v1.0
  **/
 public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
+    ISubscribeFilter updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers);
 }

@@ -17,7 +17,7 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -33,11 +33,11 @@ public class DefaultPrintSubscribeSink implements ISubscribeSink {
     public static final String BEAN_NAME = "defaultPrintSubscribeSink";
 
     @Override
-    public SinkBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
-                                                           boolean sequence,
-                                                           ConsumerRecord<String, ObjectNode> record) {
+    public SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
+                                                                     boolean sequence,
+                                                                     ConsumerRecord<String, ObjectNode> record) {
         log.info("----- This is a default printer sink, and you should customize the implementation of sink logic ! -----\n{}", record);
-        return SinkBatchMessageDispatcher.SinkCompleted.EMPTY;
+        return SinkSubscriberBatchMessageDispatcher.SinkCompleted.EMPTY;
     }
 
 }
