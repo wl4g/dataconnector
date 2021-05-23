@@ -350,8 +350,12 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             SubscriberRecord that = (SubscriberRecord) o;
             return Objects.equals(record, that.record);
         }

@@ -42,8 +42,12 @@ import java.util.function.Function;
 import static com.wl4g.infra.common.lang.Assert2.hasTextOf;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
 import static java.lang.String.format;
-import static java.util.Objects.*;
-import static org.apache.commons.lang3.StringUtils.*;
+import static java.util.Objects.nonNull;
+import static java.util.Objects.isNull;
+import static java.util.Objects.requireNonNull;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.startsWith;
+import static org.apache.commons.lang3.StringUtils.replaceChars;
 
 /**
  * The {@link AviatorFunction}

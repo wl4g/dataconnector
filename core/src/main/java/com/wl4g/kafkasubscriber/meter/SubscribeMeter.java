@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.wl4g.kafkasubscriber.meter;
 
 import com.wl4g.infra.common.lang.Assert2;
@@ -57,7 +58,7 @@ public class SubscribeMeter extends PrometheusMeterFacade {
 
     @Getter
     @AllArgsConstructor
-    public static enum MetricsName {
+    public enum MetricsName {
 
         shared_consumed("shared_consumed", "The stats of shared consumed count"),
 
