@@ -22,7 +22,10 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test") {
         exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
     }
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
     testImplementation("junit:junit")
+    testImplementation 'org.testcontainers:testcontainers:1.16.0'
+    testImplementation 'org.testcontainers:kafka:1.16.0'
 }
 
 jmh {

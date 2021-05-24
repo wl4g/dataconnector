@@ -384,6 +384,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                     });
         }
         try {
+            // see:org.apache.kafka.clients.consumer.internals.ConsumerCoordinator#onJoinComplete(int, String, String, ByteBuffer)
+            // see:org.springframework.kafka.listener.KafkaMessageListenerContainer.ListenerConsumer#doSendOffsets(Producer, Map)
             log.debug("{} :: Preferred acknowledging offsets to transaction. - : {}", groupId, partitionOffsets);
             this.acknowledgeProducer.sendOffsetsToTransaction(partitionOffsets, new ConsumerGroupMetadata(groupId));
             log.debug("{} :: Preferred acknowledged offsets to transaction. - : {}", groupId, partitionOffsets);

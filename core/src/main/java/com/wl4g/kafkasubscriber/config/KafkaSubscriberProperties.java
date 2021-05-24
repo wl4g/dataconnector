@@ -145,7 +145,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     public static class SourceProperties extends BaseConsumerProperties {
         private Pattern topicPattern;
-        private Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
+        private @Builder.Default Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
 
         public SourceProperties() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));

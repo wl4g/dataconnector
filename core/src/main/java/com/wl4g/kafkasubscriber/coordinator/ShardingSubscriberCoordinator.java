@@ -37,10 +37,14 @@ public abstract class ShardingSubscriberCoordinator {
 
     private @Autowired CachingSubscriberRegistry registry;
 
-    protected void update(ShardingInfo sharding) {
+    protected void onReBalancing(ShardingInfo sharding) {
         log.info("Re-balancing of sharding: {} ...", sharding);
-        final List<SubscriberInfo> rebalancedSubscribers = registry.getAll().stream().filter(s -> sharding.getShardingTotalCount() % s.getId() == sharding.getShardingItem()).collect(Collectors.toList());
+
+        final List<SubscriberInfo> rebalancedSubscribers = registry.getAll().stream()
+                .filter(s -> sharding.getTotal() % s.getId() == sharding.getItem()).collect(Collectors.toList());
+
         log.info("Re-balanced of sharding: {}, {}, subscribers: {}", sharding, rebalancedSubscribers.size(), rebalancedSubscribers);
+
         registry.putAll(rebalancedSubscribers.stream().collect(Collectors.toMap(SubscriberInfo::getId, s -> s)));
     }
 
@@ -50,8 +54,8 @@ public abstract class ShardingSubscriberCoordinator {
     @AllArgsConstructor
     @ToString(callSuper = true)
     public static class ShardingInfo {
-        private int shardingTotalCount;
-        private int shardingItem;
+        private int total;
+        private int item;
     }
 
 }
