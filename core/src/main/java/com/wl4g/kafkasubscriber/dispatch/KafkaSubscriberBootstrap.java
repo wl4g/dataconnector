@@ -18,10 +18,13 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaConsumerBuilder;
+import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
@@ -50,14 +53,14 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
     private final ApplicationContext context;
     private final KafkaSubscriberProperties config;
     private final SubscribeFacade subscribeFacade;
-    private final SubscriberRegistry subscriberRegistry;
+    private final CachingSubscriberRegistry subscriberRegistry;
     private final Map<String, ConcurrentMessageListenerContainer<String, String>> filterSubscribers;
     private final Map<String, ConcurrentMessageListenerContainer<String, String>> sinkSubscribers;
 
     public KafkaSubscriberBootstrap(@NotNull ApplicationContext context,
                                     @NotNull KafkaSubscriberProperties config,
                                     @NotNull SubscribeFacade subscribeFacade,
-                                    @NotNull SubscriberRegistry subscriberRegistry) {
+                                    @NotNull CachingSubscriberRegistry subscriberRegistry) {
         this.context = notNullOf(context, "context");
         this.config = notNullOf(config, "config");
         this.subscribeFacade = notNullOf(subscribeFacade, "subscribeFacade");
@@ -104,11 +107,16 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
 
     private void registerFilteringAndSenderSubscriber() {
         config.getPipelines().forEach(pipeline -> {
-            // Register filter dispatcher.
             final KafkaSubscriberProperties.SourceProperties source = pipeline.getSource();
+
+            // Create acknowledge producer.
+            final Producer<String, String> acknowledgeProducer = KafkaProducerBuilder.buildDefaultAcknowledgedKafkaProducer(
+                    source.getConsumerProps().get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+
+            // Register filter dispatcher.
             filterSubscribers.computeIfAbsent(source.getGroupId(), sourceGroupId -> {
                 final FilterBatchMessageDispatcher filterDispatcher = new FilterBatchMessageDispatcher(context, pipeline, subscribeFacade,
-                        subscriberRegistry, source.getGroupId());
+                        subscriberRegistry, source.getGroupId(), acknowledgeProducer);
                 return new KafkaConsumerBuilder(source.getConsumerProps())
                         .buildSubscriber(source.getTopicPattern(), sourceGroupId, source.getParallelism(), filterDispatcher);
             });
@@ -126,7 +134,7 @@ public class KafkaSubscriberBootstrap implements ApplicationRunner, Closeable {
                 final String sinkGroupId = subscribeFacade.generateSinkGroupId(sink, subscriber.getId());
                 sinkSubscribers.computeIfAbsent(sinkGroupId, _sinkGroupId -> {
                     final SinkSubscriberBatchMessageDispatcher sinkDispatcher = new SinkSubscriberBatchMessageDispatcher(context, pipeline, subscribeFacade,
-                            subscriberRegistry, _sinkGroupId, subscriber);
+                            subscriberRegistry, _sinkGroupId, acknowledgeProducer, subscriber);
                     return new KafkaConsumerBuilder(sink.getConsumerProps())
                             .buildSubscriber(Pattern.compile(sinkFromTopic), _sinkGroupId, sink.getParallelism(), sinkDispatcher);
                 });

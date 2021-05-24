@@ -16,19 +16,17 @@
 
 package com.wl4g.kafkasubscriber.config;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
+import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
 import com.wl4g.kafkasubscriber.dispatch.KafkaSubscriberBootstrap;
-import com.wl4g.kafkasubscriber.sink.ShardingSubscriberCoordinator;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
+import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -68,7 +66,7 @@ public class KafkaSubscriberAutoConfiguration {
     public KafkaSubscriberBootstrap kafkaSubscribeManager(ApplicationContext context,
                                                           KafkaSubscriberProperties config,
                                                           SubscribeFacade facade,
-                                                          SubscriberRegistry registry) {
+                                                          CachingSubscriberRegistry registry) {
         return new KafkaSubscriberBootstrap(context, config, facade, registry);
     }
 
@@ -78,11 +76,6 @@ public class KafkaSubscriberAutoConfiguration {
                                           @Value("${spring.application.name}") String appName,
                                           @Value("${server.port}") Integer port) {
         return new SubscribeMeter(context, meterRegistry, appName, port);
-    }
-
-    @Bean
-    public SubscriberRegistry subscriberRegistry(KafkaSubscriberProperties config) {
-        return new SubscriberRegistry(config);
     }
 
     @Bean(DefaultRecordMatchSubscribeFilter.BEAN_NAME)
@@ -95,6 +88,11 @@ public class KafkaSubscriberAutoConfiguration {
     @ConditionalOnMissingBean
     public ISubscribeSink defaultSubscriberSink() {
         return new DefaultPrintSubscribeSink();
+    }
+
+    @Bean
+    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscriberProperties config) {
+        return new CachingSubscriberRegistry(config);
     }
 
     @Bean

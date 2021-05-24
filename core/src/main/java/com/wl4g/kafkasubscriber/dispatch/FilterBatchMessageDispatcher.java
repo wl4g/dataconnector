@@ -25,7 +25,7 @@ import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
 import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
@@ -35,10 +35,14 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
@@ -70,9 +74,10 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     public FilterBatchMessageDispatcher(ApplicationContext context,
                                         KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
                                         SubscribeFacade subscribeFacade,
-                                        SubscriberRegistry subscriberRegistry,
-                                        String groupId) {
-        super(context, pipelineConfig, pipelineConfig.getFilter().getProcessProps(), subscribeFacade, subscriberRegistry, groupId);
+                                        CachingSubscriberRegistry subscriberRegistry,
+                                        String groupId,
+                                        Producer<String, String> acknowledgeProducer) {
+        super(context, pipelineConfig, pipelineConfig.getFilter().getProcessProps(), subscribeFacade, subscriberRegistry, groupId, acknowledgeProducer);
 
         // Create the internal filtered checkpoint producers.
         this.filteredCheckpointProducers = synchronizedList(new ArrayList<>(pipelineConfig.getFilter().getProcessProps().getCheckpointProducerMaxCountLimit()));
@@ -100,17 +105,12 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
     @Override
     public void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
-        // final List<SentResult> sentResults = safeList(subscriberRecords).parallelStream()
-        //        .filter(sr -> subscribeFilter.apply(sr.getSubscriber(), sr.getRecord().value()))
-        //        .map(this::doSendToFilteredAsync).collect(toList());
-
         final Set<SentResult> sentResults = doParallelCustomFilterAndSendAsync(records);
 
         // If the sending result set is empty, it indicates that checkpoint produce is not enabled and send to the kafka filtered topic.
         if (Objects.isNull(sentResults)) {
             try {
-                log.debug("{} :: Sink is disabled, skip sent acknowledge... records : {}",
-                        groupId, records);
+                log.debug("{} :: Sink is disabled, skip sent acknowledge... records : {}", groupId, records);
                 ack.acknowledge();
                 log.info("{} :: Skip sent force to acknowledged.", groupId);
             } catch (Throwable ex) {
@@ -131,7 +131,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // of large message traffic, because if different groupIds are used to consume the original message, a large amount
         // of COPY traffic may be generated before filtering, that is, bandwidth is wasted from Kafka broker to this Pod Kafka consumer.
         //
-        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+        if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
+            final Set<SentResult> completedSentResults = new HashSet<>(sentResults.size());
             while (sentResults.size() > 0) {
                 final Iterator<SentResult> it = sentResults.iterator();
                 while (it.hasNext()) {
@@ -144,13 +145,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                             addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_success,
                                     sr.getRecord().getRecord().topic(),
                                     sr.getRecord().getRecord().partition(), groupId);
+                            completedSentResults.add(sr);
                         } catch (InterruptedException | CancellationException | ExecutionException ex) {
                             log.error("{} :: Unable not to getting sent result.", groupId, ex);
                             addCounterMetrics(SubscribeMeter.MetricsName.filter_records_sent_failure,
                                     sr.getRecord().getRecord().topic(),
                                     sr.getRecord().getRecord().partition(), groupId);
                             if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
-                                break; // give up and lose
+                                continue; // give up and lose
                             }
                             sentResults.add(doSendToFilteredAsync(sr.getRecord(), sr.getRetryBegin(),
                                     sr.getRetryTimes() + 1));
@@ -162,12 +164,21 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                 }
                 Thread.yield(); // May give up the CPU
             }
-            try {
-                log.debug("{} ;: Batch sent acknowledging ...", groupId);
-                ack.acknowledge();
-                log.info("{} :: Sent acknowledged.", groupId);
-            } catch (Throwable ex) {
-                log.error(String.format("%s :: Failed to sent success acknowledge for %s", groupId, ack), ex);
+            // According to the records of each partition, only submit the part of
+            // this batch that has been successively successful from the earliest.
+            if (processConfig.getCheckpointQoS().isRetriesAtMostStrictly()) {
+                preferredAcknowledgeWithRetriesAtMostStrictly(completedSentResults);
+            }
+            // After the maximum retries, there may still be records of processing failures.
+            // At this time, the ack commit is forced and the failures are ignored.
+            else {
+                try {
+                    log.debug("{} ;: Batch sent acknowledging ...", groupId);
+                    ack.acknowledge();
+                    log.info("{} :: Sent acknowledged.", groupId);
+                } catch (Throwable ex) {
+                    log.error(String.format("%s :: Failed to sent success acknowledge for %s", groupId, ack), ex);
+                }
             }
         } else {
             try {
@@ -181,6 +192,24 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         }
 
         filterSentTimer.record(Duration.ofNanos(System.nanoTime() - filterSentBeginTime));
+    }
+
+    private List<SubscriberRecord> matchToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
+        final List<SubscriberInfo> subscribers = subscribeFacade.findSubscribers(SubscriberInfo.builder().build());
+
+        // Merge subscription server configurations and update to filters.
+        // Notice: According to the consumption filtering model design, it is necessary to share groupId
+        // consumption for unified processing, So here, all subscriber filtering rules should be merged.
+        this.subscribeFilter.updateConfigWithMergeSubscribers(subscribers,
+                pipelineConfig.getSource().getMatchToSubscriberUpdateDelayTime().toNanos());
+
+        return records.stream().map(r -> safeList(subscribers).stream()
+                .filter(s -> subscribeFacade.matchSubscriberRecord(s, r)).limit(1)
+                .findFirst()
+                .map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
+                    log.warn(String.format("%s :: No matched subscriber for record : %s", groupId, r));
+                    return null;
+                })).filter(Objects::nonNull).collect(toList());
     }
 
     private Set<SentResult> doParallelCustomFilterAndSendAsync(List<ConsumerRecord<String, ObjectNode>> records) {
@@ -222,9 +251,9 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                         log.error("{} :: Unable to getting subscribe filter result.", groupId, ex);
                         addCounterMetrics(SubscribeMeter.MetricsName.filter_records_failure, fr.getRecord().getRecord().topic(),
                                 fr.getRecord().getRecord().partition(), groupId);
-                        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                        if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
                             if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
-                                break; // give up and lose
+                                continue; // give up and lose
                             }
                             enqueueFilteredExecutor(fr, filteredResults);
                         }
@@ -236,9 +265,9 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                             log.warn("{} :: User ask to give up re-trying again filter. fr : {}, reason : {}",
                                     groupId, fr, reason.getMessage());
                         } else {
-                            if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                            if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
-                                    break; // give up and lose
+                                    continue; // give up and lose
                                 }
                                 enqueueFilteredExecutor(fr, filteredResults);
                             }
@@ -268,23 +297,6 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
         filteredResults.add(new FilteredResult(fr.getRecord(), determineFilterExecutor(fr.getRecord())
                 .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
-    }
-
-    private List<SubscriberRecord> matchToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
-        final List<SubscriberInfo> subscribers = subscribeFacade.findSubscribers(SubscriberInfo.builder().build());
-
-        // Merge subscription server configurations and update to filters.
-        // Notice: According to the consumption filtering model design, it is necessary to share groupId
-        // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        this.subscribeFilter.updateConfigWithMergeSubscribers(subscribers);
-
-        return records.stream().map(r -> safeList(subscribers).stream()
-                .filter(s -> subscribeFacade.matchSubscriberRecord(s, r)).limit(1)
-                .findFirst()
-                .map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
-                    log.warn(String.format("%s :: No matched subscriber for record : %s", groupId, r));
-                    return null;
-                })).filter(Objects::nonNull).collect(toList());
     }
 
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
@@ -338,6 +350,47 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         log.debug("{} :: Using kafka producer by subscriber: {}, key: {}",
                 groupId, subscriber.getId(), key);
         return producer;
+
+    }
+
+    /**
+     * After the maximum number of retries, there may still be records that failed to process.
+     * At this time, only the consecutively successful records starting from the earliest batch
+     * of offsets will be submitted, and the offsets of other failed records will not be committed,
+     * so as to strictly limit the processing failures that will not be submitted so that zero is not lost.
+     *
+     * @param completedSentResults completed sent results
+     */
+    private void preferredAcknowledgeWithRetriesAtMostStrictly(Set<SentResult> completedSentResults) {
+        // grouping and sorting.
+        final Map<TopicPartition, List<ConsumerRecord<String, ObjectNode>>> partitionRecords = new HashMap<>(completedSentResults.size());
+        for (SentResult sentResult : completedSentResults) {
+            ConsumerRecord<String, ObjectNode> consumerRecord = sentResult.getRecord().getRecord();
+            TopicPartition topicPartition = new TopicPartition(consumerRecord.topic(), consumerRecord.partition());
+            partitionRecords.computeIfAbsent(topicPartition, k -> new ArrayList<>()).add(consumerRecord);
+        }
+        // Find the maximum offset that increments consecutively for each partition.
+        final Map<TopicPartition, OffsetAndMetadata> partitionOffsets = new HashMap<>();
+        for (Map.Entry<TopicPartition, List<ConsumerRecord<String, ObjectNode>>> entry : partitionRecords.entrySet()) {
+            final TopicPartition topicPartition = entry.getKey();
+            final List<ConsumerRecord<String, ObjectNode>> records = entry.getValue();
+            // ASC sorting by offset.
+            records.sort(Comparator.comparingLong(ConsumerRecord::offset));
+
+            records.stream().mapToLong(ConsumerRecord::offset)
+                    .reduce((prev, curr) -> curr == prev + 1 ? curr : prev)
+                    .ifPresent(maxOffset -> {
+                        partitionOffsets.put(topicPartition, new OffsetAndMetadata(maxOffset));
+                    });
+        }
+        try {
+            log.debug("{} :: Preferred acknowledging offsets to transaction. - : {}", groupId, partitionOffsets);
+            this.acknowledgeProducer.sendOffsetsToTransaction(partitionOffsets, new ConsumerGroupMetadata(groupId));
+            log.debug("{} :: Preferred acknowledged offsets to transaction. - : {}", groupId, partitionOffsets);
+        } catch (Throwable ex) {
+            log.error(String.format("%s :: Failed to preferred acknowledge offsets to transaction. - : %s",
+                    groupId, partitionOffsets), ex);
+        }
     }
 
     @Getter
@@ -403,7 +456,3 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
 }
-
-
-
-

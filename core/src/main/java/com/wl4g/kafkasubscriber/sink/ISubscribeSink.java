@@ -27,7 +27,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @since v1.0
  **/
 public interface ISubscribeSink {
-    SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
+    SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
+                                                              long subscriberId,
                                                               boolean sequence,
                                                               ConsumerRecord<String, ObjectNode> record);
 }

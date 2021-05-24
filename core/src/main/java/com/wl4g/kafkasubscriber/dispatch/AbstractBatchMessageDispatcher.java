@@ -21,13 +21,14 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
+import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.Producer;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
@@ -59,23 +60,26 @@ public abstract class AbstractBatchMessageDispatcher
     protected final KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig;
     protected final KafkaSubscriberProperties.GenericProcessProperties processConfig;
     protected final SubscribeFacade subscribeFacade;
-    protected final SubscriberRegistry subscriberRegistry;
+    protected final CachingSubscriberRegistry subscriberRegistry;
     protected final ThreadPoolExecutor sharedNonSequenceExecutor;
     protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
     protected final String groupId;
+    protected final Producer<String, String> acknowledgeProducer;
 
     public AbstractBatchMessageDispatcher(ApplicationContext context,
                                           KafkaSubscriberProperties.SubscribePipelineProperties config,
                                           KafkaSubscriberProperties.GenericProcessProperties processConfig,
                                           SubscribeFacade subscribeFacade,
-                                          SubscriberRegistry subscriberRegistry,
-                                          String groupId) {
+                                          CachingSubscriberRegistry subscriberRegistry,
+                                          String groupId,
+                                          Producer<String, String> acknowledgeProducer) {
         this.context = Assert2.notNullOf(context, "context");
         this.pipelineConfig = Assert2.notNullOf(config, "config");
         this.processConfig = Assert2.notNullOf(processConfig, "processConfig");
         this.subscribeFacade = Assert2.notNullOf(subscribeFacade, "subscribeFacade");
         this.subscriberRegistry = Assert2.notNullOf(subscriberRegistry, "subscriberRegistry");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
+        this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
 
         // Create the shared filter single executor.
         this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
@@ -162,7 +166,7 @@ public abstract class AbstractBatchMessageDispatcher
      * Max retries then give up if it fails.
      */
     protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
-        return processConfig.getCheckpointQoS().isMoseOnceOrMaxRetries()
+        return processConfig.getCheckpointQoS().isMoseOnceOrAnyRetriesAtMost()
                 && (retryTimes > processConfig.getCheckpointQoSMaxRetries()
                 || (System.nanoTime() - retryBegin) > processConfig.getCheckpointQoSMaxRetriesTimeout().toNanos());
     }

@@ -20,12 +20,8 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
-import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -149,6 +145,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     public static class SourceProperties extends BaseConsumerProperties {
         private Pattern topicPattern;
+        private Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
 
         public SourceProperties() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));
@@ -177,7 +174,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
         private @Builder.Default boolean executorWarmUp = true;
-        private @Builder.Default CheckpointQoS checkpointQoS = CheckpointQoS.MAX_RETRIES;
+        private @Builder.Default CheckpointQoS checkpointQoS = CheckpointQoS.RETRIES_AT_MOST;
         private @Builder.Default int checkpointQoSMaxRetries = 5;
         private @Builder.Default Duration checkpointQoSMaxRetriesTimeout = Duration.ofHours(6);
         private @Builder.Default int checkpointProducerMaxCountLimit = 10;
@@ -231,38 +228,59 @@ public class KafkaSubscriberProperties implements InitializingBean {
         }
     }
 
-    public static enum CheckpointQoS {
+    public enum CheckpointQoS {
         /**
          * 0: Execute only once and give up if it fails.
          */
-        MOST_ONCE,
+        AT_MOST_ONCE,
+
         /**
          * 1: Max retries then give up if it fails.
          */
-        MAX_RETRIES,
+        RETRIES_AT_MOST,
+
         /**
-         * 2: Strictly not lost, forever retries if it fails.
+         * 2: If the failure still occurs after the maximum retries, the first consecutive
+         * successful part in the offset order of this batch will be submitted, and the other
+         * failed offsets will be abandoned and submitted until the next re-consumption.
+         */
+        RETRIES_AT_MOST_STRICTLY,
+
+        /**
+         * 3: Strictly not lost, forever retries if it fails.
          */
         STRICTLY;
 
         public boolean isMoseOnce() {
-            return isAnd(MOST_ONCE);
+            return this == AT_MOST_ONCE;
         }
 
-        public boolean isMaxRetries() {
-            return isAnd(MAX_RETRIES);
+        public boolean isRetriesAtMost() {
+            return this == RETRIES_AT_MOST;
+        }
+
+        public boolean isRetriesAtMostStrictly() {
+            return this == RETRIES_AT_MOST_STRICTLY;
         }
 
         public boolean isStrictly() {
-            return isAnd(STRICTLY);
+            return this == STRICTLY;
         }
 
-        public boolean isMoseOnceOrMaxRetries() {
-            return isMoseOnce() || isMaxRetries();
+        public boolean isMoseOnceOrRetriesAtMost() {
+            return isMoseOnce() || isRetriesAtMost();
         }
 
-        public boolean isMaxRetriesOrStrictly() {
-            return isMaxRetries() || isStrictly();
+        public boolean isMoseOnceOrAnyRetriesAtMost() {
+            return isMoseOnceOrRetriesAtMost() || isRetriesAtMostStrictly();
+        }
+
+        public boolean isRetriesAtMostOrStrictly() {
+            return isRetriesAtMost() || isStrictly();
+        }
+
+        public boolean isAnyRetriesAtMostOrStrictly() {
+            return isRetriesAtMostOrStrictly() || isRetriesAtMostStrictly();
         }
 
         public boolean isAnd(CheckpointQoS... qos) {

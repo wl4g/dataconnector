@@ -61,7 +61,7 @@ kafka-subscriber:
       sequenceExecutorsMaxCountLimit: 100
       sequenceExecutorsPerQueueSize: 100
       executorWarmUp: true
-      checkpointQoS: 1 # 0:MOST_ONCE|1:MAX_RETRIES|2:STRICTLY
+      checkpointQoS: 2 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
       checkpointQoSMaxRetries: 5
       checkpointQoSMaxRetriesTimeout: 6h
       checkpointProducerMaxCountLimit: 100
@@ -70,6 +70,7 @@ kafka-subscriber:
     - source:
         topicPattern: "input_.*"
         parallelism: 2
+        matchToSubscriberUpdateDelayTime: 3s
         consumerProps:
           bootstrap.servers: "localhost:9092"
           group.id: "shared_source_0"

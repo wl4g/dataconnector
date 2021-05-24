@@ -23,8 +23,8 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
+import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -34,6 +34,7 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.Producer;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
@@ -65,10 +66,11 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
     public SinkSubscriberBatchMessageDispatcher(ApplicationContext context,
                                                 KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
                                                 SubscribeFacade subscribeFacade,
-                                                SubscriberRegistry subscriberRegistry,
+                                                CachingSubscriberRegistry subscriberRegistry,
                                                 String groupId,
+                                                Producer<String, String> acknowledgeProducer,
                                                 SubscriberInfo subscriber) {
-        super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), subscribeFacade, subscriberRegistry, groupId);
+        super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), subscribeFacade, subscriberRegistry, groupId, acknowledgeProducer);
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
         this.sinkFromTopic = subscribeFacade.generateFilteredTopic(pipelineConfig.getFilter(), subscriber.getId());
     }
@@ -90,7 +92,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
         final long sinkBeginTime = System.nanoTime();
 
         // Wait for all sink to be completed.
-        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+        if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
             while (sinkResults.size() > 0) {
                 final Iterator<SinkResult> it = sinkResults.iterator();
                 while (it.hasNext()) {
@@ -106,7 +108,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
                             log.error("{} :: {} :: Unable to getting sink result.", groupId, subscriber.getId(), ex);
                             addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getFilteredRecord().topic(),
                                     sr.getFilteredRecord().partition(), groupId);
-                            if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                            if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                     break; // give up and lose
                                 }
@@ -122,7 +124,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
                                 log.warn("{} :: {} :: User ask to give up re-trying again sink. sr : {}, reason :{}",
                                         groupId, subscriber.getId(), sr, reason.getMessage());
                             } else {
-                                if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                                if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
                                     if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                         break; // give up and lose
                                     }
@@ -173,7 +175,8 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
         // Determine the sink task executor.
         final ThreadPoolExecutor executor = determineSinkExecutor(key);
 
-        final Future<? extends SinkCompleted> future = executor.submit(() -> subscribeSink.doSink(subscribeId, isSequence, filteredRecord));
+        final Future<? extends SinkCompleted> future = executor.submit(() ->
+                subscribeSink.doSink(subscriberRegistry, subscribeId, isSequence, filteredRecord));
         return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
     }
 
@@ -204,7 +207,3 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
     }
 
 }
-
-
-
-

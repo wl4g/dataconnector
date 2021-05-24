@@ -29,5 +29,5 @@ import java.util.function.Function;
  * @since v1.0
  **/
 public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
-    ISubscribeFilter updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers);
+    void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime);
 }

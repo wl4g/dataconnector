@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
@@ -39,6 +40,8 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
 
     public static final String BEAN_NAME = "defaultRecordMatchSubscribeFilter";
 
+    private final AtomicLong lastUpdateTime = new AtomicLong(0);
+
     private ExpressionOperator operator;
 
     @Override
@@ -52,9 +55,19 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
     }
 
     @Override
-    public DefaultRecordMatchSubscribeFilter updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers) {
+    public void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime) {
+        if (Math.abs(System.nanoTime()) - lastUpdateTime.get() > delayTime) {
+            log.info("- :: {} :: Update default record matching operator config.", BEAN_NAME);
+            lastUpdateTime.set(System.nanoTime());
+            doUpdateConfigWithMergeSubscribers(subscribers);
+        } else {
+            log.info("- :: {} :: Skip update default record matching operator config.", BEAN_NAME);
+        }
+    }
+
+    private void doUpdateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers) {
         final ExpressionOperator.LogicalOperator rootOperator = new ExpressionOperator.LogicalOperator();
-        rootOperator.setName("_ROOT_OPERATOR");
+        rootOperator.setName("__ROOT_OPERATOR__");
         rootOperator.setType(ExpressionOperator.OperatorType.LOGICAL.name());
         rootOperator.setLogical(ExpressionOperator.LogicalType.OR);
 
@@ -67,7 +80,6 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
         rootOperator.setSubConditions(subConditions);
 
         this.operator = rootOperator;
-        return this;
     }
 
 }

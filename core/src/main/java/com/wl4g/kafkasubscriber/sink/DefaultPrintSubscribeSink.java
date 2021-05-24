@@ -33,7 +33,8 @@ public class DefaultPrintSubscribeSink implements ISubscribeSink {
     public static final String BEAN_NAME = "defaultPrintSubscribeSink";
 
     @Override
-    public SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(long subscriberId,
+    public SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
+                                                                     long subscriberId,
                                                                      boolean sequence,
                                                                      ConsumerRecord<String, ObjectNode> record) {
         log.info("----- This is a default printer sink, and you should customize the implementation of sink logic ! -----\n{}", record);
