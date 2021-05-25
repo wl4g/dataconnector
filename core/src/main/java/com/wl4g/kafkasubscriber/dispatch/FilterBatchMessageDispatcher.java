@@ -19,6 +19,7 @@ package com.wl4g.kafkasubscriber.dispatch;
 import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.LongNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
@@ -43,17 +44,13 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.*;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.lang.System.getenv;
@@ -69,31 +66,39 @@ import static java.util.stream.Collectors.toList;
 @Getter
 @Slf4j
 public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
-    // TODO
-    //private Map<String, List<Producer<String, String>>> filteredCheckpointProducers;
-    private List<Producer<String, String>> filteredCheckpointProducers;
-    private ISubscribeFilter subscribeFilter;
+    private final KafkaSubscriberProperties.SourceProperties sourceConfig;
+    private final ISubscribeFilter subscribeFilter;
+    private final Map<String, List<Producer<String, String>>> checkpointProducersMap;
+    private final Producer<String, String> acknowledgeProducer;
 
     public FilterBatchMessageDispatcher(ApplicationContext context,
-                                        KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
+                                        KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig,
+                                        KafkaSubscriberProperties.SourceProperties sourceConfig,
                                         SubscribeEngineCustomizer customizer,
                                         CachingSubscriberRegistry registry,
                                         String groupId,
+                                        String topicDesc,
+                                        ISubscribeFilter filter,
                                         Producer<String, String> acknowledgeProducer) {
-        super(context, pipelineConfig, pipelineConfig.getFilter().getProcessProps(),
-                customizer, registry, groupId, acknowledgeProducer);
+        super(context, pipelineConfig, customizer, registry, groupId, topicDesc);
+        this.sourceConfig = Assert2.notNullOf(sourceConfig, "sourceConfig");
+        this.subscribeFilter = Assert2.notNullOf(filter, "filter");
+        this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
+        this.checkpointProducersMap = new ConcurrentHashMap<>(8);
     }
 
     @Override
     public void close() throws IOException {
         super.close();
-        this.filteredCheckpointProducers.forEach(producer -> {
+        this.checkpointProducersMap.forEach((tenantId, producers) -> {
             try {
-                log.info("{} :: Closing kafka producer {}...", groupId, producer);
-                producer.close();
-                log.info("{} :: Closed kafka producer {}.", groupId, producer);
+                producers.parallelStream().forEach(producer -> {
+                    log.info("{} :: Closing kafka producer of tenantId : {}...", groupId, tenantId);
+                    producer.close();
+                    log.info("{} :: Closed kafka producer of tenantId : {}.", groupId, tenantId);
+                });
             } catch (Throwable ex) {
-                log.error(String.format("%s :: Failed to close kafka producer %s.", groupId, producer), ex);
+                log.error(String.format("%s :: Failed to close kafka producers of tenant: %s.", groupId, tenantId), ex);
             }
         });
     }
@@ -117,7 +122,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Add timing filter sent metrics.
         // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
         final Timer filterSentTimer = addTimerMetrics(SubscribeMeter.MetricsName.filter_records_time,
-                pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+                sourceConfig.getTopicPattern().toString(), groupId);
         final long filterSentBeginTime = System.nanoTime();
 
         // Wait for all filtered records to be sent completed.
@@ -126,7 +131,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // of large message traffic, because if different groupIds are used to consume the original message, a large amount
         // of COPY traffic may be generated before filtering, that is, bandwidth is wasted from Kafka broker to this Pod Kafka consumer.
         //
-        if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+        if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
             final Set<SentResult> completedSentResults = new HashSet<>(sentResults.size());
             while (sentResults.size() > 0) {
                 final Iterator<SentResult> it = sentResults.iterator();
@@ -161,14 +166,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
             }
             // According to the records of each partition, only submit the part of
             // this batch that has been successively successful from the earliest.
-            if (pipelineConfig.getFilter().getCheckpoint().getQos().isRetriesAtMostStrictly()) {
+            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isRetriesAtMostStrictly()) {
                 preferredAcknowledgeWithRetriesAtMostStrictly(completedSentResults);
             }
             // After the maximum retries, there may still be records of processing failures.
             // At this time, the ack commit is forced and the failures are ignored.
             else {
                 final Timer acknowledgeTimer = addTimerMetrics(SubscribeMeter.MetricsName.acknowledge_time,
-                        pipelineConfig.getSource().getTopicPattern().toString(), groupId,
+                        sourceConfig.getTopicPattern().toString(), groupId,
                         SubscribeMeter.MetricsTag.ACK_KIND,
                         SubscribeMeter.MetricsTag.ACK_KIND_VALUE_COMMIT);
                 acknowledgeTimer.record(() -> {
@@ -183,7 +188,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
             }
         } else {
             final Timer acknowledgeTimer = addTimerMetrics(SubscribeMeter.MetricsName.acknowledge_time,
-                    pipelineConfig.getSource().getTopicPattern().toString(), groupId,
+                    sourceConfig.getTopicPattern().toString(), groupId,
                     SubscribeMeter.MetricsTag.ACK_KIND,
                     SubscribeMeter.MetricsTag.ACK_KIND_VALUE_COMMIT);
             acknowledgeTimer.record(() -> {
@@ -207,8 +212,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
         // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        obtainSubscribeFilter().updateConfigWithMergeSubscribers(subscribers,
-                pipelineConfig.getSource().getMatchToSubscriberUpdateDelayTime().toNanos());
+        subscribeFilter.updateConfigWithMergeSubscribers(subscribers,
+                sourceConfig.getMatchToSubscriberUpdateDelayTime().toNanos());
 
         return records.stream().map(r -> safeList(subscribers).stream()
                 .filter(s -> customizer.matchSubscriberRecord(s, r)).limit(1)
@@ -226,16 +231,17 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Add timing filter metrics.
         // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
         final Timer filterTimer = addTimerMetrics(SubscribeMeter.MetricsName.filter_records_time,
-                pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+                sourceConfig.getTopicPattern().toString(), groupId);
         final long filterBeginTime = System.nanoTime();
 
         // Execute custom filters in parallel them to different send executor queues.
         final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
                 .map(sr -> new FilteredResult(sr, determineFilterExecutor(sr)
-                        .submit(() -> obtainSubscribeFilter().apply(sr)), System.nanoTime(), 1)).collect(toList());
+                        .submit(() -> subscribeFilter.apply(sr)), System.nanoTime(), 1)).collect(toList());
 
         Set<SentResult> sentResults = null;
-        if (pipelineConfig.getSink().isEnable()) {
+        // If the sink is enabled, the filtered results will be sent to the checkpoint topic.
+        if (Objects.nonNull(pipelineConfig.getInternalSink())) {
             sentResults = new HashSet<>(filteredResults.size());
         } else {
             log.info("{} :: Sink is disabled, skip to send filtered results to kafka. sr : {}",
@@ -258,7 +264,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                         log.error("{} :: Unable to getting subscribe filter result.", groupId, ex);
                         addCounterMetrics(SubscribeMeter.MetricsName.filter_records_failure, fr.getRecord().getRecord().topic(),
                                 fr.getRecord().getRecord().partition(), groupId);
-                        if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+                        if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                             if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
                                 continue; // give up and lose
                             }
@@ -272,7 +278,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                             log.warn("{} :: User ask to give up re-trying again filter. fr : {}, reason : {}",
                                     groupId, fr, reason.getMessage());
                         } else {
-                            if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+                            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
                                     continue; // give up and lose
                                 }
@@ -303,7 +309,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private void enqueueFilteredExecutor(FilteredResult fr, List<FilteredResult> filteredResults) {
         log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
         filteredResults.add(new FilteredResult(fr.getRecord(), determineFilterExecutor(fr.getRecord())
-                .submit(() -> obtainSubscribeFilter().apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
+                .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
     }
 
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
@@ -312,43 +318,46 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
     }
 
-    // Create custom subscribe filter. (Each processing pipeline uses different custom filter instances)
-    private ISubscribeFilter obtainSubscribeFilter() {
-        if (Objects.isNull(subscribeFilter)) {
-            synchronized (this) {
-                if (Objects.isNull(subscribeFilter)) {
-                    try {
-                        log.info("{} :: Creating custom subscriber filter...", groupId);
-                        this.subscribeFilter = context.getBean(pipelineConfig.getFilter().getCustomFilterBeanName(),
-                                ISubscribeFilter.class);
-                    } catch (NoSuchBeanDefinitionException ex) {
-                        throw new IllegalStateException(String.format("%s :: Could not getting custom subscriber filter of bean %s",
-                                groupId, pipelineConfig.getFilter().getCustomFilterBeanName()));
-                    }
-                }
-            }
-        }
-        return subscribeFilter;
-    }
-
     // Create the internal filtered checkpoint producers.
-    private List<Producer<String, String>> obtainFilteredCheckpointProducers() {
-        if (Objects.isNull(filteredCheckpointProducers)) {
+    private List<Producer<String, String>> obtainFilteredCheckpointProducers(SubscriberInfo subscriber) {
+        final int maxCountLimit = pipelineConfig.getInternalFilter().getCheckpoint().getProducerMaxCountLimit();
+        List<Producer<String, String>> tenantProducers = checkpointProducersMap.get(subscriber.getTenantId());
+        if (Objects.isNull(tenantProducers)) {
             synchronized (this) {
-                if (Objects.isNull(filteredCheckpointProducers)) {
+                if (Objects.isNull(tenantProducers)) {
                     log.info("{} :: Creating filtered checkpoint producers...", groupId);
-                    // New create filtered checkpoint producers.
-                    final int maxCountLimit = pipelineConfig.getFilter().getCheckpoint().getProducerMaxCountLimit();
-                    final KafkaProducerBuilder builder = new KafkaProducerBuilder(pipelineConfig.getFilter().getCheckpoint().getDefaultProducerProps());
+                    // Merge to tenant producer properties with default configuration.
+                    final KafkaProducerBuilder builder = new KafkaProducerBuilder(pipelineConfig.getInternalFilter()
+                            .getCheckpoint().getDefaultProducerProps());
                     final List<Producer<String, String>> producers = new ArrayList<>(maxCountLimit);
                     for (int i = 0; i < maxCountLimit; i++) {
                         producers.add(builder.buildProducer());
                     }
-                    this.filteredCheckpointProducers = synchronizedList(producers);
+                    this.checkpointProducersMap.put(subscriber.getTenantId(), tenantProducers = synchronizedList(producers));
                 }
             }
         }
-        return filteredCheckpointProducers;
+        return tenantProducers;
+    }
+
+    private Producer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
+        final List<Producer<String, String>> checkpointProducers = obtainFilteredCheckpointProducers(subscriber);
+        final int producerSize = checkpointProducers.size();
+        Producer<String, String> producer = checkpointProducers.get(RandomUtils.nextInt(0, producerSize));
+        if (Objects.nonNull(subscriber.getSettings().getIsSequence()) && subscriber.getSettings().getIsSequence()) {
+            //final int mod = (int) subscriber.getId();
+            final int mod = (int) Crc32Util.compute(key);
+            final int index = producerSize % mod;
+            producer = checkpointProducers.get(index);
+            log.debug("{} :: determined send isolation sequence producer index : {}, mod : {}, subscriber : {}",
+                    groupId, index, mod, subscriber.getId());
+        }
+        if (Objects.isNull(producer)) {
+            throw new IllegalStateException(String.format("%s :: Could not getting producer by subscriber: %s, key: %s",
+                    groupId, subscriber.getId(), key));
+        }
+        log.debug("{} :: Using kafka producer by subscriber: {}, key: {}", groupId, subscriber.getId(), key);
+        return producer;
     }
 
     /**
@@ -360,7 +369,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         final ObjectNode value = record.getRecord().value();
 
         final Producer<String, String> producer = determineKafkaProducer(subscriber, key);
-        final String filteredTopic = customizer.generateCheckpointTopic(pipelineConfig.getFilter(), subscriber);
+        final String filteredTopic = customizer.generateCheckpointTopic(pipelineConfig.getInternalFilter(), subscriber);
 
         // Notice: Hand down the subscriber metadata of each record to the downstream.
         value.set(KEY_SUBSCRIBER_ID, LongNode.valueOf(subscriber.getId()));
@@ -368,26 +377,6 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
         final ProducerRecord<String, String> _record = new ProducerRecord<>(filteredTopic, key, value.asText());
         return new SentResult(record, producer, producer.send(_record), retryBegin, retryTimes);
-    }
-
-    private Producer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
-        final List<Producer<String, String>> checkpointProducers = obtainFilteredCheckpointProducers();
-        Producer<String, String> producer = checkpointProducers.get(RandomUtils.nextInt(0, checkpointProducers.size()));
-        if (Objects.nonNull(subscriber.getSettings().getIsSequence()) && subscriber.getSettings().getIsSequence()) {
-            //final int mod = (int) subscriber.getId();
-            final int mod = (int) Crc32Util.compute(key);
-            final int index = filteredCheckpointProducers.size() % mod;
-            producer = filteredCheckpointProducers.get(index);
-            log.debug("{} :: determined send isolation sequence producer index : {}, mod : {}, subscriber : {}",
-                    groupId, index, mod, subscriber.getId());
-        }
-        if (Objects.isNull(producer)) {
-            throw new IllegalStateException(String.format("%s :: Could not getting producer by subscriber: %s, key: %s",
-                    groupId, subscriber.getId(), key));
-        }
-        log.debug("{} :: Using kafka producer by subscriber: {}, key: {}",
-                groupId, subscriber.getId(), key);
-        return producer;
     }
 
     /**
@@ -421,7 +410,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                     });
         }
         final Timer acknowledgeSentTimer = addTimerMetrics(SubscribeMeter.MetricsName.acknowledge_time,
-                pipelineConfig.getSource().getTopicPattern().toString(), groupId,
+                sourceConfig.getTopicPattern().toString(), groupId,
                 SubscribeMeter.MetricsTag.ACK_KIND,
                 SubscribeMeter.MetricsTag.ACK_KIND_VALUE_SEND);
         acknowledgeSentTimer.record(() -> {

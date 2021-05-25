@@ -12,70 +12,55 @@
 #
 
 kafka-subscriber:
-  bases:
-    consumerProps: &baseConsumerProps
-      request.timeout.ms: 30000
-      #enable.auto.commit: false
-      auto.offset.reset: earliest
-      #max.poll.records: 500
-      #max.poll.interval.ms: 300000
-      #session.timeout.ms: 30000
-      #heartbeat.interval.ms: 10000
-      #fetch.max.wait.ms: 5000
-      #fetch.min.bytes: 1
-      #fetch.max.bytes: 52428800
-      #max.partition.fetch.bytes: 1048576
-      #connections.max.idle.ms: 540000
-      #receive.buffer.bytes: 65536
-      #send.buffer.bytes: 131072
-      #retry.backoff.ms: 100
-      #reconnect.backoff.ms: 50
-      #metrics.sample.window.ms: 30000
-      #metric.reporters: io.joyrpc.metrics.kafka.KafkaMetricsReporter
-      #metric.reporter.class: io.joyrpc.metrics.kafka.KafkaMetricsReporter
-      #metric.reporter.topic: metrics
-      #metric.reporter.topic.partitions: 1
-      #metric.reporter.topic.replication.factor: 1
-      #metric.reporter.topic.period: 60
-      #metric.reporter.topic.period.unit: SECONDS
-      #metric.reporter.topic.send.timeout: 10000
-      #metric.reporter.topic.send.timeout.unit: MILLISECONDS
-      #metric.reporter.topic.buffer.size: 10000
-      #metric.reporter.topic.buffer.size.unit: BYTES
-      #metric.reporter.topic.compression.type: none
-      #metric.reporter.topic.compression.level: -1
-      #metric.reporter.topic.clean: false
-      #metric.reporter.topic.clean.interval: 60
-      #metric.reporter.topic.clean.interval.unit: SECONDS
-      #metric.reporter.topic.clean.wait: 60
-      #metric.reporter.topic.clean.wait.unit: SECONDS
-      #metric.reporter.topic.clean.policy: delete
-      #metric.reporter.topic.clean.policy.delete.retention.ms: 86400000
-      #metric.reporter.topic.clean.policy.delete.retention.ms.unit: MILLISECONDS
-      #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms: 0
-      #metric.reporter.topic.clean.policy.delete.min.compaction.lag.ms.unit: MILLISECONDS
-      #metric.reporter.topic.clean.policy.delete.min.cleanable.dirty.ratio: 0.5
-    processProps: &baseProcessProps
-      sharedExecutorThreadPoolSize: 50
-      sharedExecutorQueueSize: 500
-      sequenceExecutorsMaxCountLimit: 100
-      sequenceExecutorsPerQueueSize: 100
-      executorWarmUp: true
-
-  pipelines:
-    - source:
-        topicPattern: "input_.*"
+  definitions:
+    ## Notice: The following configuration method is usually used in experimental scenarios to
+    ## define the subscriber list. When integrating into actual business applications, the interface
+    ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
+    subscribers:
+      - id: 1001
+        name: "subscriber_0"
+        enable: true
+        tenantId: "6382bb26e7e81a0047bee709"
+        settings:
+          isSequence: false
+          logRetentionTime: 1d
+          logRetentionSize: 1GB
+          properties:
+            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+            # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
+            6382bb26e7e81a0047bee709: '{"bootstrap.servers":"${IT_KAFKA_SERVERS:localhost:9092}"}'
+    bases:
+      consumerProps: &baseConsumerProps
+        request.timeout.ms: 30000
+        auto.offset.reset: earliest
+      processProps: &baseProcessProps
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        sequenceExecutorsMaxCountLimit: 100
+        sequenceExecutorsPerQueueSize: 100
+        executorWarmUp: true
+    sources:
+      - name: kafka01
+        topicPattern: "test-input"
         parallelism: 2
         matchToSubscriberUpdateDelayTime: 3s
         consumerProps:
-          bootstrap.servers: "localhost:9092"
-          group.id: "shared_source_"
+          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+          group.id: "shared_source_101"
           <<: *baseConsumerProps
-      filter:
+      - name: kafka02
+        topicPattern: "test-input"
+        parallelism: 2
+        matchToSubscriberUpdateDelayTime: 3s
+        consumerProps:
+          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+          group.id: "shared_source_102"
+          <<: *baseConsumerProps
+    filters:
+      - name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
         topicPrefix: "shared_filtered_"
         topicPartitions: 10
         replicationFactor: 1
-        customFilterBeanName: defaultRecordMatchSubscribeFilter # By default: defaultRecordMatchSubscribeFilter
         processProps:
           <<: *baseProcessProps
         checkpoint:
@@ -96,42 +81,20 @@ kafka-subscriber:
             retries: 5
             retry.backoff.ms: 6000
             compression.type: gzip
-      sink:
-        enable: true
+    sinks:
+      - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
         groupIdPrefix: "isolation_sink_"
-        customSinkBeanName: defaultSubscribeSink # By default: defaultSubscribeSink
         parallelism: 2
-        consumerProps:
-          bootstrap.servers: "localhost:9092"
-          <<: *baseConsumerProps
         processProps:
           <<: *baseProcessProps
 
-  ## Notice: The following configuration method is usually used in experimental scenarios to
-  ## define the subscriber list. When integrating into actual business applications, the interface
-  ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
-  subscribers:
-    - id: 1001
-      name: "subscriber_0"
-      enable: true
-      tenantId: "6382bb26e7e81a0047bee709"
-      settings:
-        isSequence: false
-        logRetentionTime: 1d
-        logRetentionSize: 1GB
-        properties:
-          defaultRecordMatchSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"a >= 1 && b <= 2"}}'
-          # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
-          6382bb26e7e81a0047bee709: '{"bootstrap.servers":"localhost:9092"}'
-    - id: 1002
-      name: "subscriber_1"
-      enable: true
-      tenantId: "6382bb26e7e81a0047bee709"
-      settings:
-        isSequence: false
-        logRetentionTime: 1d
-        logRetentionSize: 1GB
-        properties:
-          defaultRecordMatchSubscribeFilter: '{"type":"LOGICAL","name":"testCondition3","logical":"AND","subConditions":[{"type":"RELATION","name":"testCondition1","fn":{"expression":"a >= 1 && b <= 2"}},{"type":"RELATION","name":"testCondition2","fn":{"expression":"a >= 5"}}]}'
-          # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
-          6382bb26e7e81a0047bee709: '{"bootstrap.servers":"localhost:9092"}'
+  pipelines:
+    - name: defaultPipeline
+      # Required (default: [])
+      sources:
+        - kafka01
+        - kafka02
+      # Required (default: defaultSubscribeFilter)
+      filter: defaultSubscribeFilter
+      # Optional (default: defaultSubscribeSink)
+      sink: defaultSubscribeSink

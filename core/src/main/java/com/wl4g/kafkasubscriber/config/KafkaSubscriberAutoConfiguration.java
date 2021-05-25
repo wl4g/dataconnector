@@ -55,18 +55,17 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeEngineCustomizer defaultSubscriberCustomizer(KafkaSubscriberProperties config) {
+    public SubscribeEngineCustomizer defaultSubscriberEngineCustomizer(KafkaSubscriberProperties config) {
         return new SubscribeEngineCustomizer() {
             @Override
             public List<SubscriberInfo> loadSubscribers(SubscriberInfo query) {
-                return config.getSubscribers();
+                return config.getDefinitions().getSubscribers();
             }
         };
     }
 
     @Bean
-    @ConditionalOnMissingBean
-    public SubscribeEngineFacade subscribeFacade(KafkaSubscriberProperties config, SubscribeEngineBootstrap engine) {
+    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscriberProperties config, SubscribeEngineBootstrap engine) {
         return new SubscribeEngineFacade(config, engine);
     }
 

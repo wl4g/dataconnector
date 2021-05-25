@@ -34,6 +34,8 @@ import java.util.Objects;
  **/
 public interface SubscribeEngineCustomizer {
 
+    //List<KafkaBrokerInfo> loadKafkaBrokers(@Null KafkaBroker query);
+
     List<SubscriberInfo> loadSubscribers(@Null SubscriberInfo query);
 
     default boolean matchSubscriberRecord(@Null SubscriberInfo subscriber,
