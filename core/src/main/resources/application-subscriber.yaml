@@ -16,7 +16,7 @@ kafka-subscriber:
     consumerProps: &baseConsumerProps
       request.timeout.ms: 30000
       #enable.auto.commit: false
-      #auto.offset.reset: earliest
+      auto.offset.reset: earliest
       #max.poll.records: 500
       #max.poll.interval.ms: 300000
       #session.timeout.ms: 30000
@@ -73,7 +73,7 @@ kafka-subscriber:
         matchToSubscriberUpdateDelayTime: 3s
         consumerProps:
           bootstrap.servers: "localhost:9092"
-          group.id: "shared_source_0"
+          group.id: "shared_source_"
           <<: *baseConsumerProps
       filter:
         topicPrefix: "shared_filtered_"

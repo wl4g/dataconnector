@@ -19,10 +19,12 @@ package com.wl4g.kafkasubscriber.facade;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import javax.validation.constraints.Null;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The {@link SubscribeFacade}
@@ -38,7 +40,10 @@ public interface SubscribeFacade {
                                           @Null ConsumerRecord<String, ObjectNode> record) {
         // Notice: By default, the $subscriberId field of the source message match, which should be customized
         // to match the subscriber relationship corresponding to each record in the source consume topic.
-        return record.value().get("$subscriberId").asLong(-1L) == subscriber.getId();
+        if (Objects.nonNull(subscriber) && Objects.nonNull(record.value())) {
+            return record.value().at("/$subscriberId").asLong(-1L) == subscriber.getId();
+        }
+        return false;
     }
 
     default String generateFilteredTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
@@ -48,12 +53,20 @@ public interface SubscribeFacade {
 
     default String generateFilteredTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
                                          @Null Long subscriberId) {
-        return filterConfig.getTopicPrefix().concat("-").concat(String.valueOf(subscriberId));
+        String topicPrefix = filterConfig.getTopicPrefix();
+        if (!StringUtils.endsWithAny(topicPrefix, "-", "_")) {
+            topicPrefix += "_";
+        }
+        return topicPrefix.concat(String.valueOf(subscriberId));
     }
 
     default String generateSinkGroupId(@Null KafkaSubscriberProperties.SinkProperties sinkConfig,
                                        @Null Long subscriberId) {
-        return sinkConfig.getGroupIdPrefix().concat("-").concat(String.valueOf(subscriberId));
+        String groupIdPrefix = sinkConfig.getGroupIdPrefix();
+        if (!StringUtils.endsWithAny(groupIdPrefix, "-", "_")) {
+            groupIdPrefix += "_";
+        }
+        return groupIdPrefix.concat(String.valueOf(subscriberId));
     }
 
 }

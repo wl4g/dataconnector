@@ -84,12 +84,6 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
     @Override
-    public void afterPropertiesSet() {
-        // Create custom subscribe filter. (Each processing pipeline uses different custom filter instances)
-        this.subscribeFilter = obtainSubscribeFilter();
-    }
-
-    @Override
     public void close() throws IOException {
         super.close();
         this.filteredCheckpointProducers.forEach(producer -> {
@@ -200,7 +194,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
         // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        this.subscribeFilter.updateConfigWithMergeSubscribers(subscribers,
+        obtainSubscribeFilter().updateConfigWithMergeSubscribers(subscribers,
                 pipelineConfig.getSource().getMatchToSubscriberUpdateDelayTime().toNanos());
 
         return records.stream().map(r -> safeList(subscribers).stream()
@@ -225,7 +219,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Execute custom filters in parallel them to different send executor queues.
         final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
                 .map(sr -> new FilteredResult(sr, determineFilterExecutor(sr)
-                        .submit(() -> subscribeFilter.apply(sr)), System.nanoTime(), 1)).collect(toList());
+                        .submit(() -> obtainSubscribeFilter().apply(sr)), System.nanoTime(), 1)).collect(toList());
 
         Set<SentResult> sentResults = null;
         if (pipelineConfig.getSink().isEnable()) {
@@ -296,7 +290,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private void enqueueFilteredExecutor(FilteredResult fr, List<FilteredResult> filteredResults) {
         log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
         filteredResults.add(new FilteredResult(fr.getRecord(), determineFilterExecutor(fr.getRecord())
-                .submit(() -> subscribeFilter.apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
+                .submit(() -> obtainSubscribeFilter().apply(fr.getRecord())), fr.getRetryBegin(), fr.getRetryTimes() + 1));
     }
 
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
@@ -305,9 +299,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         return determineTaskExecutor(subscriber.getId(), subscriber.getIsSequence(), key);
     }
 
+    // Create custom subscribe filter. (Each processing pipeline uses different custom filter instances)
     private ISubscribeFilter obtainSubscribeFilter() {
+        if (Objects.nonNull(subscribeFilter)) {
+            return subscribeFilter;
+        }
         try {
-            return context.getBean(pipelineConfig.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
+            return this.subscribeFilter = context
+                    .getBean(pipelineConfig.getFilter().getCustomFilterBeanName(), ISubscribeFilter.class);
         } catch (NoSuchBeanDefinitionException ex) {
             throw new IllegalStateException(String.format("%s :: Could not getting custom subscriber filter of bean %s",
                     groupId, pipelineConfig.getFilter().getCustomFilterBeanName()));

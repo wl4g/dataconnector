@@ -29,7 +29,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Producer;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -54,7 +53,7 @@ import static java.util.Collections.synchronizedList;
 @Getter
 @Slf4j
 public abstract class AbstractBatchMessageDispatcher
-        implements BatchAcknowledgingMessageListener<String, ObjectNode>, InitializingBean, Closeable {
+        implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
     protected final ApplicationContext context;
     protected final KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig;

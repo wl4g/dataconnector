@@ -42,6 +42,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -73,12 +74,6 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
         super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), subscribeFacade, subscriberRegistry, groupId, acknowledgeProducer);
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
         this.sinkFromTopic = subscribeFacade.generateFilteredTopic(pipelineConfig.getFilter(), subscriber.getId());
-    }
-
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        // Create custom subscribe sinker. (Each processing pipeline uses different custom sink instances)
-        this.subscribeSink = obtainSubscribeSink();
     }
 
     @Override
@@ -180,9 +175,14 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
         return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
     }
 
+    // Create custom subscribe sinker. (Each processing pipeline uses different custom sink instances)
     private ISubscribeSink obtainSubscribeSink() {
+        if (Objects.nonNull(subscribeSink)){
+            return this.subscribeSink;
+        }
         try {
-            return context.getBean(pipelineConfig.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
+            return this.subscribeSink = context
+                    .getBean(pipelineConfig.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
         } catch (NoSuchBeanDefinitionException ex) {
             throw new IllegalStateException(String.format("%s :: %s :: Could not getting custom subscriber sink of bean %s",
                     groupId, subscriber.getId(), pipelineConfig.getSink().getCustomSinkBeanName()));
