@@ -26,13 +26,12 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 
 import javax.validation.constraints.NotNull;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static java.util.Objects.nonNull;
 import static java.util.stream.Collectors.toMap;
-import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * The {@link KafkaProducerBuilder}
@@ -44,19 +43,20 @@ public class KafkaProducerBuilder {
     private final Map<String, Object> producerProps;
     private final ProducerFactory<String, String> factory;
 
-    public KafkaProducerBuilder(@NotNull Map<String, Object> producerProps) {
-        // cleanup producer properties.
+    public KafkaProducerBuilder(@NotNull Properties producerProps) {
+        // cleanup producer key or value is null properties.
         this.producerProps = safeMap(producerProps).entrySet().stream()
-                .filter(e -> !isBlank(e.getKey()) && nonNull(e.getValue()))
-                .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
-        this.factory = buildKafkaProducerFactory();
+                .filter(e -> nonNull(e.getKey()) && nonNull(e.getValue()))
+                .collect(toMap(e -> (String) e.getKey(), Map.Entry::getValue));
+        this.factory = buildProducerFactory();
     }
 
-    private ProducerFactory<String, String> buildKafkaProducerFactory() {
+    private ProducerFactory<String, String> buildProducerFactory() {
+        // Props map generic type conversion.
         return new DefaultKafkaProducerFactory<>(producerProps);
     }
 
-    public Producer<String, String> buildKafkaProducer() {
+    public Producer<String, String> buildProducer() {
         return factory.createProducer();
     }
 
@@ -67,14 +67,14 @@ public class KafkaProducerBuilder {
     public static Producer<String, String> buildDefaultAcknowledgedKafkaProducer(String bootstrapServers) {
         // TODO support more custom configuration.
         Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
-        Map<String, Object> configProps = new HashMap<>();
+        Properties configProps = new Properties();
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         configProps.put(ProducerConfig.ACKS_CONFIG, "all");
         configProps.put(ProducerConfig.RETRIES_CONFIG, "3");
         configProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        return new KafkaProducerBuilder(configProps).buildKafkaProducer();
+        return new KafkaProducerBuilder(configProps).buildProducer();
     }
 
 }

@@ -73,7 +73,7 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
 
         // Merge to all subscriber filter conditions to root operator condition.
         final List<ExpressionOperator> subConditions = safeList(subscribers).stream().map(s -> {
-            final String exprJson = s.getProperties().getProperty(BEAN_NAME);
+            final String exprJson = s.getSettings().getProperties().getProperty(BEAN_NAME);
             return JacksonUtils.parseJSON(exprJson, ExpressionOperator.class);
         }).collect(Collectors.toList());
 

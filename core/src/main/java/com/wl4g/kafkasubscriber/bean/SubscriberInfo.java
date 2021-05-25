@@ -17,12 +17,11 @@
 package com.wl4g.kafkasubscriber.bean;
 
 import com.wl4g.infra.common.lang.Assert2;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.ToString;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.springframework.util.unit.DataSize;
 
+import java.time.Duration;
 import java.util.Properties;
 
 /**
@@ -39,16 +38,32 @@ import java.util.Properties;
 public class SubscriberInfo {
     private Long id;
     private String name;
+    private String tenantId;
     private Boolean enable;
-    private Boolean isSequence;
-    private Properties properties;
+    private @Builder.Default SubscribeSettings settings = new SubscribeSettings();
 
     public void validate() {
         Assert2.notNullOf(id, "id");
         Assert2.hasTextOf(name, "name");
         Assert2.notNullOf(enable, "enable");
-        Assert2.notNullOf(isSequence, "isSequence");
-        Assert2.notNullOf(properties, "properties");
+        this.settings.validate();
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString(callSuper = true)
+    @NoArgsConstructor
+    public static class SubscribeSettings {
+        private @Builder.Default Boolean isSequence = false;
+        private @Builder.Default Duration logRetentionTime = Duration.ofDays(3);
+        private @Builder.Default DataSize logRetentionBytes = DataSize.ofMegabytes(512);
+        private @Builder.Default Properties properties = new Properties();
+
+        public void validate() {
+            Assert2.notNullOf(isSequence, "isSequence");
+            Assert2.notNullOf(properties, "properties");
+        }
     }
 
 }

@@ -76,11 +76,13 @@ public class SubscribeMeter extends PrometheusMeterFacade {
 
         filter_records_sent_time("filter_time", "The stats of filter sent latency"),
 
+        acknowledge_time("acknowledge_time", "The stats of commit acknowledge latency"),
+
         sink_records_success("sink_records_success", "The stats of sink records success"),
 
         sink_records_failure("sink_records_failure", "The stats of sink records failure"),
 
-        sink_time("sink_time", "The stats of sdk client sink latency");
+        sink_time("sink_time", "The stats of sink latency");
 
         private final String name;
         private final String help;
@@ -91,6 +93,9 @@ public class SubscribeMeter extends PrometheusMeterFacade {
         public static final String PARTITION = "partition";
         public static final String GROUP_ID = "groupId";
         public static final String SUBSCRIBE = "subscribe";
+        public static final String ACK_KIND = "ackKind";
+        public static final String ACK_KIND_VALUE_COMMIT = "commit";
+        public static final String ACK_KIND_VALUE_SEND = "send";
     }
 
     public static final double[] DEFAULT_PERCENTILES = new double[]{0.5, 0.9, 0.95};

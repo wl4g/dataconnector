@@ -21,8 +21,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.IntNode;
-import com.fasterxml.jackson.databind.node.TextNode;
 import com.googlecode.aviator.AviatorEvaluator;
 import com.googlecode.aviator.Expression;
 import com.googlecode.aviator.exception.CompileExpressionErrorException;
@@ -34,20 +32,14 @@ import lombok.extern.slf4j.Slf4j;
 import javax.annotation.Nullable;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 import static com.wl4g.infra.common.lang.Assert2.hasTextOf;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
 import static java.lang.String.format;
-import static java.util.Objects.nonNull;
-import static java.util.Objects.isNull;
-import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.startsWith;
-import static org.apache.commons.lang3.StringUtils.replaceChars;
+import static java.util.Objects.*;
+import static org.apache.commons.lang3.StringUtils.*;
 
 /**
  * The {@link AviatorFunction}
@@ -98,8 +90,8 @@ public class AviatorFunction implements Function<JsonNode, Boolean> {
             if (nonNull(value)) {
                 variables.put(variableName, value);
             } else {
-                final String errmsg =
-                        format("Unable to get path expr value '%s' from event: %s", variableName, record);
+                final String errmsg = format("Unable to get path expr value '%s' from event: %s",
+                        variableName, record);
                 log.warn(errmsg);
                 // throw new IllegalArgumentException(errmsg);
             }
@@ -113,17 +105,14 @@ public class AviatorFunction implements Function<JsonNode, Boolean> {
             AviatorEvaluator.validate(expression);
         } catch (ExpressionSyntaxErrorException | CompileExpressionErrorException e) {
             throw new IllegalArgumentException(
-                    "The expression of AviatorCondition is invalid: " + e.getMessage());
+                    "The expression of Aviator function is invalid: " + e.getMessage());
         }
     }
 
     private static Object extractWithExprPath(@NotNull JsonNode record, @NotBlank String jqExpr) {
         hasTextOf(jqExpr, "jqExpr");
         if (!startsWith(jqExpr, ".")) {
-            // @formatter:off
-            // throw new IllegalArgumentException(format("Invalid json jq expression '%s', must start with '.'", jqExpr));
-            // @formatter:on
-            jqExpr = ".".concat(jqExpr);
+            throw new IllegalArgumentException(format("Invalid the jq expr '%s', must start with '.'", jqExpr));
         }
 
         String expr = replaceChars(jqExpr, ".", "/");
@@ -136,7 +125,7 @@ public class AviatorFunction implements Function<JsonNode, Boolean> {
         }
 
         final JsonNode value = record.at(expr);
-        if (value instanceof ArrayNode) {
+        if (Objects.nonNull(value) && value.isArray()) {
             if (arrayIndex >= 0) {
                 final JsonNode arrayValue = ((ArrayNode) value).get(arrayIndex);
                 return nonNull(arrayValue) ? convertValue(arrayValue) : null;
@@ -148,14 +137,30 @@ public class AviatorFunction implements Function<JsonNode, Boolean> {
     }
 
     private static Object convertValue(JsonNode value) {
-        if (value instanceof TextNode) {
+        if (value.isMissingNode()) {
+            return null;
+        } else if (value.isTextual()) {
             return value.textValue();
-        } else if (value instanceof IntNode) {
+        } else if (value.isShort()) {
+            return value.shortValue();
+        } else if (value.isInt()) {
             return value.intValue();
+        } else if (value.isLong()) {
+            return value.longValue();
+        } else if (value.isBigInteger()) {
+            return value.bigIntegerValue();
+        } else if (value.isBigDecimal()) {
+            return value.decimalValue();
         } else if (value.isBoolean()) {
             return value.booleanValue();
-        } else if (value instanceof ArrayNode) {
-            return ((ArrayNode) value);
+        } else if (value.isArray()) {
+            final List<Object> array = new ArrayList<>(value.size());
+            value.forEach(array::add);
+            return array.toArray();
+        } else if (value.isObject()) {
+            final Map<String, JsonNode> map = new HashMap<>(value.size());
+            value.fieldNames().forEachRemaining(fieldName -> map.put(fieldName, value.get(fieldName)));
+            return map;
         }
         return value;
     }

@@ -15,4 +15,26 @@
  *
  */
 
-package com.wl4g.kafkasubscriber.util.expression;
+package com.wl4g.kafkasubscriber;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * The {@link KafkaSubscriberApplicationIT}
+ *
+ * @author James Wong
+ * @since v1.0
+ **/
+@SpringBootApplication
+public class KafkaSubscriberApplicationIT {
+
+    public static void main(String[] args) {
+        System.out.println("Integration test topic initializing ...");
+        new IntegrationTestTopicInitializer().start();
+
+        System.out.println("Integration test application starting ...");
+        SpringApplication.run(KafkaSubscriberApplicationIT.class, args);
+    }
+
+}

@@ -17,13 +17,15 @@
 package com.wl4g.kafkasubscriber.config;
 
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
-import com.wl4g.kafkasubscriber.dispatch.KafkaSubscriberBootstrap;
-import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
+import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
+import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineBootstrap;
+import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
@@ -53,21 +55,27 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeFacade defaultSubscriberFacade(KafkaSubscriberProperties config) {
-        return new SubscribeFacade() {
+    public SubscribeEngineCustomizer defaultSubscriberCustomizer(KafkaSubscriberProperties config) {
+        return new SubscribeEngineCustomizer() {
             @Override
-            public List<SubscriberInfo> findSubscribers(SubscriberInfo query) {
+            public List<SubscriberInfo> loadSubscribers(SubscriberInfo query) {
                 return config.getSubscribers();
             }
         };
     }
 
     @Bean
-    public KafkaSubscriberBootstrap kafkaSubscribeManager(ApplicationContext context,
+    @ConditionalOnMissingBean
+    public SubscribeEngineFacade subscribeFacade(KafkaSubscriberProperties config, SubscribeEngineBootstrap engine) {
+        return new SubscribeEngineFacade(config, engine);
+    }
+
+    @Bean
+    public SubscribeEngineBootstrap kafkaSubscribeManager(ApplicationContext context,
                                                           KafkaSubscriberProperties config,
-                                                          SubscribeFacade facade,
+                                                          SubscribeEngineCustomizer facade,
                                                           CachingSubscriberRegistry registry) {
-        return new KafkaSubscriberBootstrap(context, config, facade, registry);
+        return new SubscribeEngineBootstrap(context, config, facade, registry);
     }
 
     @Bean
@@ -91,8 +99,9 @@ public class KafkaSubscriberAutoConfiguration {
     }
 
     @Bean
-    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscriberProperties config) {
-        return new CachingSubscriberRegistry(config);
+    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscriberProperties config,
+                                                               SubscribeEngineCustomizer facade) {
+        return new CachingSubscriberRegistry(config, facade);
     }
 
     @Bean
@@ -100,6 +109,12 @@ public class KafkaSubscriberAutoConfiguration {
     public ShardingSubscriberCoordinator shardingSubscriberCoordinator() {
         return new ShardingSubscriberCoordinator() {
         };
+    }
+
+    @Bean
+    public CheckpointTopicManager filteredTopicManager(KafkaSubscriberProperties config,
+                                                       CachingSubscriberRegistry registry) {
+        return new CheckpointTopicManager(config, registry);
     }
 
 }

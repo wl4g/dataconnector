@@ -17,6 +17,7 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 

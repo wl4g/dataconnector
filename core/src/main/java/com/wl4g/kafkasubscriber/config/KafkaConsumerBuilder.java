@@ -125,10 +125,9 @@ public class KafkaConsumerBuilder {
         @Override
         public ObjectNode deserialize(String topic, byte[] data) {
             try {
-                if (data == null) {
+                if (Objects.isNull(data)) {
                     return null;
                 } else {
-                    // TODO may not object node, and force convert
                     return (ObjectNode) parseToNode(new String(data, encoding));
                 }
             } catch (UnsupportedEncodingException e) {

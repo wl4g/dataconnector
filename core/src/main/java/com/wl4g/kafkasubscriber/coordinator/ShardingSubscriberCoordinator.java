@@ -18,7 +18,6 @@
 package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

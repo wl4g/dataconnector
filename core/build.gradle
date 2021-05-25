@@ -38,3 +38,14 @@ jmh {
     resultsFile = project.file("${project.buildDir}/reports/jmh/results.json")
     resultFormat = 'JSON'
 }
+
+sourceSets {
+    test {
+        java {
+            srcDirs 'src/it/java'
+        }
+        resources {
+            srcDirs 'src/it/resources'
+        }
+    }
+}

@@ -20,10 +20,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
-import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
+import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
@@ -66,14 +66,14 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
 
     public SinkSubscriberBatchMessageDispatcher(ApplicationContext context,
                                                 KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
-                                                SubscribeFacade subscribeFacade,
-                                                CachingSubscriberRegistry subscriberRegistry,
+                                                SubscribeEngineCustomizer customizer,
+                                                CachingSubscriberRegistry registry,
                                                 String groupId,
                                                 Producer<String, String> acknowledgeProducer,
                                                 SubscriberInfo subscriber) {
-        super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), subscribeFacade, subscriberRegistry, groupId, acknowledgeProducer);
+        super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), customizer, registry, groupId, acknowledgeProducer);
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
-        this.sinkFromTopic = subscribeFacade.generateFilteredTopic(pipelineConfig.getFilter(), subscriber.getId());
+        this.sinkFromTopic = customizer.generateCheckpointTopic(pipelineConfig.getFilter(), subscriber.getId());
     }
 
     @Override
@@ -87,7 +87,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
         final long sinkBeginTime = System.nanoTime();
 
         // Wait for all sink to be completed.
-        if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
+        if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
             while (sinkResults.size() > 0) {
                 final Iterator<SinkResult> it = sinkResults.iterator();
                 while (it.hasNext()) {
@@ -103,7 +103,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
                             log.error("{} :: {} :: Unable to getting sink result.", groupId, subscriber.getId(), ex);
                             addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getFilteredRecord().topic(),
                                     sr.getFilteredRecord().partition(), groupId);
-                            if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
+                            if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                     break; // give up and lose
                                 }
@@ -119,7 +119,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
                                 log.warn("{} :: {} :: User ask to give up re-trying again sink. sr : {}, reason :{}",
                                         groupId, subscriber.getId(), sr, reason.getMessage());
                             } else {
-                                if (processConfig.getCheckpointQoS().isAnyRetriesAtMostOrStrictly()) {
+                                if (pipelineConfig.getFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                     if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                         break; // give up and lose
                                     }
@@ -155,7 +155,7 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
     }
 
     private ThreadPoolExecutor determineSinkExecutor(String key) {
-        return determineTaskExecutor(subscriber.getId(), subscriber.getIsSequence(), key);
+        return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
     }
 
     /**
@@ -164,29 +164,35 @@ public class SinkSubscriberBatchMessageDispatcher extends AbstractBatchMessageDi
     private SinkResult doSinkAsync(ConsumerRecord<String, ObjectNode> filteredRecord, long retryBegin, int retryTimes) {
         final String key = filteredRecord.key();
         final ObjectNode value = filteredRecord.value();
-        final long subscribeId = value.remove("$$subscriberId").asLong(-1L);
-        final boolean isSequence = value.remove("$$isSequence").asBoolean(false);
+        final long subscribeId = value.remove(FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID).asLong(-1L);
+        final boolean isSequence = value.remove(FilterBatchMessageDispatcher.KEY_IS_SEQUENCE).asBoolean(false);
 
         // Determine the sink task executor.
         final ThreadPoolExecutor executor = determineSinkExecutor(key);
 
         final Future<? extends SinkCompleted> future = executor.submit(() ->
-                subscribeSink.doSink(subscriberRegistry, subscribeId, isSequence, filteredRecord));
+                subscribeSink.doSink(registry, subscribeId, isSequence, filteredRecord));
         return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
     }
 
     // Create custom subscribe sinker. (Each processing pipeline uses different custom sink instances)
     private ISubscribeSink obtainSubscribeSink() {
-        if (Objects.nonNull(subscribeSink)){
-            return this.subscribeSink;
+        if (Objects.isNull(subscribeSink)) {
+            synchronized (this) {
+                if (Objects.isNull(subscribeSink)) {
+                    try {
+                        log.info("{} :: {} :: Creating custom subscriber sink of bean {}", groupId, subscriber.getId(),
+                                pipelineConfig.getSink().getCustomSinkBeanName());
+                        this.subscribeSink = context.getBean(pipelineConfig.getSink().getCustomSinkBeanName(),
+                                ISubscribeSink.class);
+                    } catch (NoSuchBeanDefinitionException ex) {
+                        throw new IllegalStateException(String.format("%s :: %s :: Could not getting custom subscriber sink of bean %s",
+                                groupId, subscriber.getId(), pipelineConfig.getSink().getCustomSinkBeanName()));
+                    }
+                }
+            }
         }
-        try {
-            return this.subscribeSink = context
-                    .getBean(pipelineConfig.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
-        } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("%s :: %s :: Could not getting custom subscriber sink of bean %s",
-                    groupId, subscriber.getId(), pipelineConfig.getSink().getCustomSinkBeanName()));
-        }
+        return this.subscribeSink;
     }
 
     @Getter

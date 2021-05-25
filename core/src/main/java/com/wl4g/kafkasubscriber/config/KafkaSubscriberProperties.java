@@ -25,9 +25,11 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.util.unit.DataSize;
 
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
@@ -53,7 +55,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     private @Builder.Default List<SubscriberInfo> subscribers = new ArrayList<>(2);
 
     @Override
-    public void afterPropertiesSet() throws Exception {
+    public void afterPropertiesSet() {
         pipelines.forEach(SubscribePipelineProperties::validate);
         preOptimizeProperties();
     }
@@ -66,19 +68,21 @@ public class KafkaSubscriberProperties implements InitializingBean {
             // Should be 'max.poll.records' equals to filter executor queue size.
             final Object originalMaxPollRecords = p.getSource().getConsumerProps().get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
             p.getSource().getConsumerProps().put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(p.getFilter().getProcessProps().getSharedExecutorQueueSize()));
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, p.getFilter().getProcessProps()
-                    .getSharedExecutorQueueSize(), p.getSource().getGroupId());
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, p.getFilter().getProcessProps()
+                            .getSharedExecutorQueueSize(), p.getSource().getGroupId());
 
             // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
             p.getSource().getConsumerProps().put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, originalMaxPollRecords, "true", p.getSource().getGroupId());
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, originalMaxPollRecords, "true", p.getSource().getGroupId());
 
             // Mandatory manual commit.
             p.getSource().getConsumerProps().put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}", ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, originalMaxPollRecords, "false", p.getSource().getGroupId());
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, originalMaxPollRecords, "false", p.getSource().getGroupId());
         });
     }
-
 
     @Getter
     @Setter
@@ -97,6 +101,71 @@ public class KafkaSubscriberProperties implements InitializingBean {
         }
     }
 
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    public static class SourceProperties extends BaseConsumerProperties {
+        private Pattern topicPattern;
+        private @Builder.Default Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
+
+        public SourceProperties() {
+            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));
+        }
+
+        @Override
+        public void validate() {
+            super.validate();
+            Assert2.notNullOf(topicPattern, "topicPattern");
+            Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
+        }
+
+        public String getGroupId() {
+            return getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG);
+        }
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class FilterProperties {
+        private @Builder.Default String topicPrefix = "shared_filtered_";
+        private @Builder.Default int topicPartitions = 10;
+        private @Builder.Default short replicationFactor = 1;
+        private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
+        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
+        private @Builder.Default CheckpointProperties checkpoint = new CheckpointProperties();
+
+        public void validate() {
+            this.processProps.validate();
+            Assert2.hasTextOf(topicPrefix, "topicPrefix");
+            Assert2.hasTextOf(customFilterBeanName, "customFilterBeanName");
+            Assert2.notNullOf(checkpoint, "checkpoint");
+            checkpoint.validate();
+        }
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @NoArgsConstructor
+    @ToString
+    public static class SinkProperties extends BaseConsumerProperties {
+        private @Builder.Default String groupIdPrefix = "isolation_sink_";
+        private @Builder.Default String customSinkBeanName = DefaultPrintSubscribeSink.BEAN_NAME;
+        private @Builder.Default boolean enable = true;
+        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
+
+        public void validate() {
+            super.validate();
+            Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
+            Assert2.hasTextOf(customSinkBeanName, "customSinkBeanName");
+            Assert2.notNullOf(enable, "enable");
+            getProcessProps().validate();
+        }
+    }
 
     @Getter
     @Setter
@@ -143,30 +212,6 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
-    public static class SourceProperties extends BaseConsumerProperties {
-        private Pattern topicPattern;
-        private @Builder.Default Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
-
-        public SourceProperties() {
-            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));
-        }
-
-        @Override
-        public void validate() {
-            super.validate();
-            Assert2.notNullOf(topicPattern, "topicPattern");
-            Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
-        }
-
-        public String getGroupId() {
-            return (String) getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG);
-        }
-    }
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString
     @NoArgsConstructor
     public static class GenericProcessProperties {
         private @Builder.Default int sharedExecutorThreadPoolSize = 50;
@@ -174,20 +219,12 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
         private @Builder.Default int sequenceExecutorsPerQueueSize = 100;
         private @Builder.Default boolean executorWarmUp = true;
-        private @Builder.Default CheckpointQoS checkpointQoS = CheckpointQoS.RETRIES_AT_MOST;
-        private @Builder.Default int checkpointQoSMaxRetries = 5;
-        private @Builder.Default Duration checkpointQoSMaxRetriesTimeout = Duration.ofHours(6);
-        private @Builder.Default int checkpointProducerMaxCountLimit = 10;
 
         public void validate() {
             Assert2.isTrueOf(sharedExecutorThreadPoolSize > 0, "sharedExecutorThreadPoolSize > 0");
             Assert2.isTrueOf(sharedExecutorQueueSize > 0, "sharedExecutorQueueSize > 0");
             Assert2.isTrueOf(sequenceExecutorsMaxCountLimit > 0, "sequenceExecutorsMaxCountLimit > 0");
             Assert2.isTrueOf(sequenceExecutorsPerQueueSize > 0, "sequenceExecutorsPerQueueSize > 0");
-            Assert2.notNullOf(checkpointQoS, "qos");
-            Assert2.isTrueOf(checkpointQoSMaxRetries > 0, "qosMaxRetries > 0");
-            Assert2.isTrueOf(checkpointProducerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
-            Assert2.isTrueOf(checkpointQoSMaxRetriesTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
         }
     }
 
@@ -196,35 +233,63 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class FilterProperties {
-        private @Builder.Default String topicPrefix = "shared_filtered_";
-        private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
-        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
-        private @Builder.Default Map<String, String> producerProps = new HashMap<String, String>(4) {
+    public static class CheckpointProperties {
+        private @Builder.Default CheckpointQoS qos = CheckpointQoS.RETRIES_AT_MOST;
+        private @Builder.Default int qoSMaxRetries = 5;
+        private @Builder.Default Duration qoSMaxRetriesTimeout = Duration.ofHours(6);
+        private @Builder.Default int producerMaxCountLimit = 10;
+        private @Builder.Default Properties defaultTopicProps = new Properties() {
             {
-                put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-                put(ProducerConfig.ACKS_CONFIG, "0");
-                put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-                put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "1048576");
-                put(ProducerConfig.SEND_BUFFER_CONFIG, "131072");
-                put(ProducerConfig.RETRIES_CONFIG, "5");
-                put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "6000");
-                put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip"); // snappy|gzip|lz4|zstd|none
+                setProperty(TopicConfig.CLEANUP_POLICY_CONFIG, "delete");
+                setProperty(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1)));
+                setProperty(TopicConfig.RETENTION_BYTES_CONFIG, String.valueOf(DataSize.ofGigabytes(1).toBytes()));
+                setProperty(TopicConfig.DELETE_RETENTION_MS_CONFIG, "86400000");
+                //setProperty(TopicConfig.SEGMENT_MS_CONFIG, "86400000");
+                //setProperty(TopicConfig.SEGMENT_BYTES_DOC, "1073741824");
+                //setProperty(TopicConfig.SEGMENT_INDEX_BYTES_DOC, "10485760");
+                //setProperty(TopicConfig.MIN_CLEANABLE_DIRTY_RATIO_CONFIG, "0.1");
+                //setProperty(TopicConfig.MIN_COMPACTION_LAG_MS_CONFIG, "86400000");
+                //setProperty(TopicConfig.MAX_COMPACTION_LAG_MS_CONFIG, "86400000");
+                //setProperty(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, "1");
+                //setProperty(TopicConfig.FLUSH_MS_CONFIG, "1000");
+                //setProperty(TopicConfig.FLUSH_MESSAGES_INTERVAL_CONFIG, "10000");
+                //setProperty(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "false");
+            }
+        };
+        private @Builder.Default Properties defaultProducerProps = new Properties() {
+            {
+                setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+                setProperty(ProducerConfig.ACKS_CONFIG, "0");
+                setProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+                setProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "1048576");
+                setProperty(ProducerConfig.SEND_BUFFER_CONFIG, "131072");
+                setProperty(ProducerConfig.RETRIES_CONFIG, "5");
+                setProperty(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "6000");
+                setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip"); // snappy|gzip|lz4|zstd|none
+                setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+                setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
             }
         };
 
         public void validate() {
-            this.processProps.validate();
-            Assert2.hasTextOf(topicPrefix, "topicPrefix");
-            Assert2.hasTextOf(customFilterBeanName, "customFilterBeanName");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), "max.request.size");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG), "send.buffer.bytes");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.RETRIES_CONFIG), "retries");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.RETRY_BACKOFF_MS_CONFIG), "retry.backoff.ms");
-            Assert2.notNullOf(producerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG), "compression.type");
+            Assert2.notNullOf(qos, "qos");
+            Assert2.isTrueOf(qoSMaxRetries > 0, "qosMaxRetries > 0");
+            Assert2.isTrueOf(producerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
+            Assert2.isTrueOf(qoSMaxRetriesTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
+            // check for topic props.
+            Assert2.notNullOf(defaultTopicProps.get(TopicConfig.CLEANUP_POLICY_CONFIG), "cleanup.policy");
+            Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_MS_CONFIG), "retention.ms");
+            Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_BYTES_CONFIG), "retention.bytes");
+            Assert2.notNullOf(defaultTopicProps.get(TopicConfig.DELETE_RETENTION_MS_CONFIG), "delete.retention.ms");
+            // check for producer props.
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), "max.request.size");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.SEND_BUFFER_CONFIG), "send.buffer.bytes");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.RETRIES_CONFIG), "retries");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.RETRY_BACKOFF_MS_CONFIG), "retry.backoff.ms");
+            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG), "compression.type");
         }
     }
 
@@ -291,26 +356,6 @@ public class KafkaSubscriberProperties implements InitializingBean {
             return Arrays.asList(qos).contains(this);
         }
 
-    }
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @NoArgsConstructor
-    @ToString
-    public static class SinkProperties extends BaseConsumerProperties {
-        private @Builder.Default String groupIdPrefix = "isolation_sink_";
-        private @Builder.Default String customSinkBeanName = DefaultPrintSubscribeSink.BEAN_NAME;
-        private @Builder.Default boolean enable = true;
-        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
-
-        public void validate() {
-            super.validate();
-            Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
-            Assert2.hasTextOf(customSinkBeanName, "customSinkBeanName");
-            Assert2.notNullOf(enable, "enable");
-            getProcessProps().validate();
-        }
     }
 
 }

@@ -19,9 +19,9 @@ package com.wl4g.kafkasubscriber.dispatch;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
+import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
+import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
 import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
@@ -36,6 +36,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -58,8 +59,8 @@ public abstract class AbstractBatchMessageDispatcher
     protected final ApplicationContext context;
     protected final KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig;
     protected final KafkaSubscriberProperties.GenericProcessProperties processConfig;
-    protected final SubscribeFacade subscribeFacade;
-    protected final CachingSubscriberRegistry subscriberRegistry;
+    protected final SubscribeEngineCustomizer customizer;
+    protected final CachingSubscriberRegistry registry;
     protected final ThreadPoolExecutor sharedNonSequenceExecutor;
     protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
     protected final String groupId;
@@ -68,15 +69,15 @@ public abstract class AbstractBatchMessageDispatcher
     public AbstractBatchMessageDispatcher(ApplicationContext context,
                                           KafkaSubscriberProperties.SubscribePipelineProperties config,
                                           KafkaSubscriberProperties.GenericProcessProperties processConfig,
-                                          SubscribeFacade subscribeFacade,
-                                          CachingSubscriberRegistry subscriberRegistry,
+                                          SubscribeEngineCustomizer customizer,
+                                          CachingSubscriberRegistry registry,
                                           String groupId,
                                           Producer<String, String> acknowledgeProducer) {
         this.context = Assert2.notNullOf(context, "context");
         this.pipelineConfig = Assert2.notNullOf(config, "config");
         this.processConfig = Assert2.notNullOf(processConfig, "processConfig");
-        this.subscribeFacade = Assert2.notNullOf(subscribeFacade, "subscribeFacade");
-        this.subscriberRegistry = Assert2.notNullOf(subscriberRegistry, "subscriberRegistry");
+        this.customizer = Assert2.notNullOf(customizer, "customizer");
+        this.registry = Assert2.notNullOf(registry, "registry");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
         this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
 
@@ -104,6 +105,9 @@ public abstract class AbstractBatchMessageDispatcher
             }
             this.isolationSequenceExecutors.add(executor);
         }
+    }
+
+    public void init() {
     }
 
     @Override
@@ -140,7 +144,7 @@ public abstract class AbstractBatchMessageDispatcher
         } catch (Throwable ex) {
             log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
-            if (processConfig.getCheckpointQoS().isMoseOnce()) {
+            if (pipelineConfig.getFilter().getCheckpoint().getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
         }
@@ -165,9 +169,9 @@ public abstract class AbstractBatchMessageDispatcher
      * Max retries then give up if it fails.
      */
     protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
-        return processConfig.getCheckpointQoS().isMoseOnceOrAnyRetriesAtMost()
-                && (retryTimes > processConfig.getCheckpointQoSMaxRetries()
-                || (System.nanoTime() - retryBegin) > processConfig.getCheckpointQoSMaxRetriesTimeout().toNanos());
+        return pipelineConfig.getFilter().getCheckpoint().getQos().isMoseOnceOrAnyRetriesAtMost()
+                && (retryTimes > pipelineConfig.getFilter().getCheckpoint().getQoSMaxRetries()
+                || (System.nanoTime() - retryBegin) > pipelineConfig.getFilter().getCheckpoint().getQoSMaxRetriesTimeout().toNanos());
     }
 
     protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
@@ -197,12 +201,12 @@ public abstract class AbstractBatchMessageDispatcher
         SubscribeMeter.getDefault().counter(metrics.getName(), metrics.getHelp(), tags.toArray(new String[0])).increment();
     }
 
-    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
-        return addTimerMetrics(metrics, null, topic, null, groupId);
+    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId, String... addTags) {
+        return addTimerMetrics(metrics, null, topic, null, groupId, addTags);
     }
 
     protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, Long subscriberId, String topic,
-                                    Integer partition, String groupId) {
+                                    Integer partition, String groupId, String... addTags) {
         final List<String> tags = new ArrayList<>(8);
         tags.add(SubscribeMeter.MetricsTag.TOPIC);
         tags.add(topic);
@@ -215,6 +219,9 @@ public abstract class AbstractBatchMessageDispatcher
         if (Objects.nonNull(partition)) {
             tags.add(SubscribeMeter.MetricsTag.PARTITION);
             tags.add(String.valueOf(partition));
+        }
+        if (Objects.nonNull(addTags)) {
+            tags.addAll(Arrays.asList(addTags));
         }
         final String[] tagArray = tags.toArray(new String[0]);
         return SubscribeMeter.getDefault().timer(metrics.getName(), metrics.getHelp(),
