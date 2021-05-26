@@ -17,9 +17,12 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+import java.io.Serializable;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The {@link ISubscribeSink}
@@ -28,8 +31,46 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @since v1.0
  **/
 public interface ISubscribeSink {
-    SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                                              long subscriberId,
-                                                              boolean sequence,
-                                                              ConsumerRecord<String, ObjectNode> record);
+
+    String getName();
+
+    String getType();
+
+    SubscribeSinkConfig getSinkConfig();
+
+    void validate();
+
+    default Future<? extends Serializable> doSink(String subscriberId,
+                                                  boolean sequence,
+                                                  ConsumerRecord<String, ObjectNode> record) {
+        return DONE;
+    }
+
+    Future<Serializable> DONE = new Future<Serializable>() {
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return false;
+        }
+
+        @Override
+        public boolean isDone() {
+            return true;
+        }
+
+        @Override
+        public Serializable get() {
+            return null;
+        }
+
+        @Override
+        public Serializable get(long timeout, TimeUnit unit) {
+            return null;
+        }
+    };
+
 }

@@ -19,13 +19,19 @@ package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import lombok.Getter;
 
+import javax.validation.constraints.NotBlank;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
+import static java.util.stream.Collectors.toMap;
 
 /**
  * The {@link CachingSubscriberRegistry}
@@ -35,54 +41,65 @@ import java.util.concurrent.ConcurrentHashMap;
  **/
 public class CachingSubscriberRegistry {
 
-    private final @Getter KafkaSubscriberProperties config;
-    private final @Getter SubscribeEngineCustomizer facade;
-    private final Map<Long, SubscriberInfo> registry;
+    private final @Getter KafkaSubscribeConfiguration config;
+    private final @Getter SubscribeEngineCustomizer customizer;
+    private final Map<String, Map<String, SubscriberInfo>> registry;
 
-    public CachingSubscriberRegistry(KafkaSubscriberProperties config,
-                                     SubscribeEngineCustomizer facade) {
+    public CachingSubscriberRegistry(KafkaSubscribeConfiguration config,
+                                     SubscribeEngineCustomizer customizer) {
         this.config = Assert2.notNullOf(config, "config");
-        this.facade = Assert2.notNullOf(facade, "facade");
-        this.registry = new ConcurrentHashMap<>(16);
+        this.customizer = Assert2.notNullOf(customizer, "customizer");
+        this.registry = new ConcurrentHashMap<>(2);
     }
 
-    public SubscriberInfo get(Long id) {
-        return registry.get(id);
+    public SubscriberInfo get(@NotBlank String pipelineName,
+                              String subscriberId) {
+        return obtainWithPipeline(pipelineName).get(subscriberId);
     }
 
-    public Collection<SubscriberInfo> getAll() {
-        // TODO
-//        return registry.values();
-        return facade.loadSubscribers(new SubscriberInfo());
+    public Collection<SubscriberInfo> getSubscribers(@NotBlank String pipelineName) {
+        return obtainWithPipeline(pipelineName).values();
     }
 
-    public void put(Long id, SubscriberInfo subscriber) {
-        registry.put(id, subscriber);
+    public void putAll(@NotBlank String pipelineName, Map<String, SubscriberInfo> subscribers) {
+        obtainWithPipeline(pipelineName).putAll(safeMap(subscribers));
     }
 
-    public void putAll(Map<Long, SubscriberInfo> subscribers) {
-        registry.putAll(subscribers);
+    public void putAll(@NotBlank String pipelineName, Collection<SubscriberInfo> subscribers) {
+        obtainWithPipeline(pipelineName).putAll(safeList(subscribers)
+                .stream()
+                .collect(toMap(SubscriberInfo::getId, s -> s)));
     }
 
-    public void putAllIfAbsent(Map<Long, SubscriberInfo> subscribers) {
-        subscribers.forEach(registry::putIfAbsent);
+    public boolean remove(@NotBlank String pipelineName) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
+        return Objects.nonNull(registry.remove(pipelineName));
     }
 
-    public void remove(Long id) {
-        registry.remove(id);
+    public boolean remove(@NotBlank String pipelineName, @NotBlank String subscriberId) {
+        Assert2.hasTextOf(subscriberId, "subscriberId");
+        return Objects.nonNull(obtainWithPipeline(pipelineName).remove(subscriberId));
+    }
+
+    public void clear(@NotBlank String pipelineName) {
+        obtainWithPipeline(pipelineName).clear();
     }
 
     public void clear() {
         registry.clear();
     }
 
+    public int size(@NotBlank String pipelineName) {
+        return obtainWithPipeline(pipelineName).size();
+    }
+
     public int size() {
         return registry.size();
     }
 
-    public boolean isEmpty() {
-        return registry.isEmpty();
+    private Map<String, SubscriberInfo> obtainWithPipeline(@NotBlank String pipelineName) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
+        return registry.computeIfAbsent(pipelineName, k -> new ConcurrentHashMap<>(16));
     }
-
 
 }

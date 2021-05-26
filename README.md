@@ -19,7 +19,8 @@ docker-compose up -d
 
 ```bash
 cat << EOF >> /etc/hosts
-127.0.0.1   zookeeper kafka
+127.0.0.1   zookeeper01 kafka01
+127.0.0.1   zookeeper02 kafka02
 EOF
 ```
 

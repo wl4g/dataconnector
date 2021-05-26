@@ -16,12 +16,15 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.serialize.JacksonUtils;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -36,36 +39,42 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
  * @since v1.0
  **/
 @Slf4j
-public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
+public class DefaultRecordMatchSubscribeFilter extends AbstractSubscribeFilter {
 
-    public static final String BEAN_NAME = "defaultSubscribeFilter";
+    public static final String TYPE_NAME = "EXPRESSION_MATCH";
 
     private final AtomicLong lastUpdateTime = new AtomicLong(0);
 
     private ExpressionOperator operator;
 
     @Override
-    public Boolean apply(FilterBatchMessageDispatcher.SubscriberRecord record) {
-        if (Objects.isNull(operator)) {
-            log.warn("- :: {} :: The configuration of the default record matching operator has not been injected!!! " +
-                    "Please check if it is config item correctly at filterProps.{}", record.getSubscriber().getId(), BEAN_NAME);
-            return false;
-        }
-        return operator.apply(record.getRecord().value());
+    public String getType() {
+        return TYPE_NAME;
     }
 
     @Override
-    public void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime) {
+    public boolean doMatch(SubscriberInfo subscriber,
+                           ConsumerRecord<String, ObjectNode> record) {
+        if (Objects.isNull(operator)) {
+            log.warn("{} :: {} :: The configuration of the default record matching operator has not been injected!!! " +
+                    "Please check if it is config item correctly at filterProps.", getName(), subscriber.getId());
+            return false;
+        }
+        return operator.apply(record.value());
+    }
+
+    @Override
+    public void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime) {
         if (Math.abs(System.nanoTime()) - lastUpdateTime.get() > delayTime) {
-            log.info("- :: {} :: Update default record matching operator config.", BEAN_NAME);
+            log.info("- :: {} :: Update default record matching operator config.", TYPE_NAME);
             lastUpdateTime.set(System.nanoTime());
-            doUpdateConfigWithMergeSubscribers(subscribers);
+            doUpdateMergeConditions(subscribers);
         } else {
-            log.info("- :: {} :: Skip update default record matching operator config.", BEAN_NAME);
+            log.info("- :: {} :: Skip update default record matching operator config.", TYPE_NAME);
         }
     }
 
-    private void doUpdateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers) {
+    private void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers) {
         final ExpressionOperator.LogicalOperator rootOperator = new ExpressionOperator.LogicalOperator();
         rootOperator.setName("__ROOT_OPERATOR__");
         rootOperator.setType(ExpressionOperator.OperatorType.LOGICAL.name());
@@ -73,7 +82,11 @@ public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
 
         // Merge to all subscriber filter conditions to root operator condition.
         final List<ExpressionOperator> subConditions = safeList(subscribers).stream().map(s -> {
-            final String exprJson = s.getSettings().getProperties().getProperty(BEAN_NAME);
+            final String exprJson = s.getSettings().getProperties().getProperty(getName());
+            if (StringUtils.isBlank(exprJson)) {
+                throw new IllegalArgumentException(String.format("Could not match expression filter named '%s' was found from the subscriber '%s' properties",
+                        getName(), s.getId()));
+            }
             return JacksonUtils.parseJSON(exprJson, ExpressionOperator.class);
         }).collect(Collectors.toList());
 

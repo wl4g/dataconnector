@@ -16,18 +16,39 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import java.util.List;
-import java.util.function.Function;
+import java.util.Collection;
 
 /**
- * The {@link ISubscribeFilter}
+ * The custom subscribe processing filtering, support {@link #doMatch(SubscriberInfo, ConsumerRecord)}
+ * by record row match filtering, and {@link #doMap(SubscriberInfo, ConsumerRecord)} by record column filtering.
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
-    void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime);
+public interface ISubscribeFilter {
+
+    String getName();
+
+    String getType();
+
+    SubscribeFilterConfig getFilterConfig();
+
+    void validate();
+
+    boolean doMatch(SubscriberInfo subscriber,
+                    ConsumerRecord<String, ObjectNode> record);
+
+    default ConsumerRecord<String, ObjectNode> doMap(
+            SubscriberInfo subscriber,
+            ConsumerRecord<String, ObjectNode> record) {
+        return record;
+    }
+
+    void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime);
+
 }

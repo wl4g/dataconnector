@@ -16,16 +16,18 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
-import com.wl4g.kafkasubscriber.facade.SubscribeFacade;
-import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.CountMeterEvent;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.TimingMeterEvent;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
-import com.wl4g.kafkasubscriber.sink.SubscriberRegistry;
-import com.wl4g.kafkasubscriber.util.Crc32Util;
-import io.micrometer.core.instrument.Timer;
+import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -34,19 +36,23 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
-import org.springframework.context.ApplicationContext;
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.support.Acknowledgment;
 
+import java.io.Serializable;
 import java.time.Duration;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -58,128 +64,176 @@ import static java.util.stream.Collectors.toList;
 @Getter
 @Slf4j
 public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
-    private ISubscribeSink subscribeSink;
+    private final SubscriberInfo subscriber;
+    private final ISubscribeSink subscribeSink;
 
-    public SinkBatchMessageDispatcher(ApplicationContext context,
-                                      KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig,
-                                      SubscribeFacade subscribeFacade,
-                                      SubscriberRegistry subscriberRegistry,
-                                      String groupId) {
-        super(context, pipelineConfig, pipelineConfig.getSink().getProcessProps(), subscribeFacade, subscriberRegistry, groupId);
-    }
-
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        // Create custom subscribe sinker. (Each processing pipeline uses different custom sink instances)
-        this.subscribeSink = obtainSubscribeSink();
+    public SinkBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+                                      SubscribeEnginePipelineConfig pipelineConfig,
+                                      SubscribeEngineCustomizer customizer,
+                                      CachingSubscriberRegistry registry,
+                                      ApplicationEventPublisher eventPublisher,
+                                      String topicDesc,
+                                      String groupId,
+                                      SubscriberInfo subscriber,
+                                      ISubscribeSink sink) {
+        super(config, pipelineConfig, customizer, registry, eventPublisher, topicDesc, groupId);
+        this.subscribeSink = Assert2.notNullOf(sink, "sink");
+        this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
     }
 
     @Override
     public void doOnMessage(List<ConsumerRecord<String, ObjectNode>> filteredRecords, Acknowledgment ack) {
         // Sink from filtered records (per subscriber a topic).
-        final List<SinkResult> sinkResults = safeList(filteredRecords).stream()
-                .map(fr -> doSinkAsync(fr, System.nanoTime(), 0)).collect(toList());
+        final List<SinkResult> sinkResults = safeList(filteredRecords)
+                .stream()
+                .map(fr -> doSinkAsync(fr, System.nanoTime(), 0))
+                .collect(toList());
 
-        // Add timing sink metrics.
-        // The benefit of not using LAMDA records is better use of arthas for troubleshooting during operation.
-        final Timer sinkTimer = addTimerMetrics(SubscribeMeter.MetricsName.sink_time,
-                // TODO per subscriber a topic pattern!!!
-                pipelineConfig.getSource().getTopicPattern().toString(), groupId);
-        final long sinkBeginTime = System.nanoTime();
+        // Add timing sink metrics. (The benefit of not using lamda records is better use of arthas for troubleshooting during operation.)
+        final long sinkTimerBegin = System.nanoTime();
 
         // Wait for all sink to be completed.
-        if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+        if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint()
+                .getQos().isAnyRetriesAtMostOrStrictly()) {
+            final Set<SinkResult> completedSinkResults = new HashSet<>(sinkResults.size());
             while (sinkResults.size() > 0) {
                 final Iterator<SinkResult> it = sinkResults.iterator();
                 while (it.hasNext()) {
                     final SinkResult sr = it.next();
                     // Notice: is done is not necessarily successful, both exception and cancellation will be done.
                     if (sr.getFuture().isDone()) {
-                        SinkCompleted sc = null;
+                        Serializable sc = null;
                         try {
                             sc = sr.getFuture().get();
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_success, sr.getFilteredRecord().topic(),
-                                    sr.getFilteredRecord().partition(), groupId);
+                            completedSinkResults.add(sr);
+
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_success,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
                         } catch (InterruptedException | CancellationException ex) {
-                            log.error("Unable to getting sink result.", ex);
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getFilteredRecord().topic(),
-                                    sr.getFilteredRecord().partition(), groupId);
-                            if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                            log.error("{} :: {} :: Unable to getting sink result.", groupId, subscriber.getId(), ex);
+
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_failure,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
+
+                            if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                     break; // give up and lose
                                 }
-                                sinkResults.add(doSinkAsync(sr.getFilteredRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
+                                sinkResults.add(doSinkAsync(sr.getRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
                             }
                         } catch (ExecutionException ex) {
-                            log.error("Unable not to getting sink result.", ex);
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getFilteredRecord().topic(),
-                                    sr.getFilteredRecord().partition(), groupId);
+                            log.error("{} :: {} :: Unable not to getting sink result.", groupId, subscriber.getId(), ex);
+
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_failure,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
+
                             final Throwable reason = ExceptionUtils.getRootCause(ex);
                             // User needs to give up trying again.
                             if (reason instanceof GiveUpRetryExecutionException) {
-                                log.warn("User ask to give up re-trying again sink. sr : {}, reason :{}", sr, reason.getMessage());
+                                log.warn("{} :: {} :: User ask to give up re-trying again sink. sr : {}, reason :{}",
+                                        groupId, subscriber.getId(), sr, reason.getMessage());
                             } else {
-                                if (processConfig.getCheckpointQoS().isMaxRetriesOrStrictly()) {
+                                if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                     if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                         break; // give up and lose
                                     }
-                                    sinkResults.add(doSinkAsync(sr.getFilteredRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
+                                    sinkResults.add(doSinkAsync(sr.getRecord(), sr.getRetryBegin(), sr.getRetryTimes() + 1));
                                 }
                             }
                         } finally {
                             it.remove();
                         }
-                        log.debug("Sink to completed result : {}", sc);
+                        log.debug("{} :: {} :: Sink to completed result : {}", groupId, subscriber.getId(), sc);
                     }
                 }
                 Thread.yield(); // May give up the CPU
             }
             try {
-                log.debug("Batch sink acknowledging ...");
+                log.debug("{} :: {} :: Batch sink acknowledging ...", groupId, subscriber.getId());
                 ack.acknowledge();
-                log.info("Sink to acknowledged.");
+                log.info("{} :: {} :: Sink to acknowledged.", groupId, subscriber.getId());
+
+                postAcknowledgeCountMeter(MetricsName.acknowledge_success, completedSinkResults);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to sink success acknowledge for %s", ack), ex);
+                log.error(String.format("%s :: %s :: Failed to sink success acknowledge for %s", groupId, subscriber.getId(), ack), ex);
+
+                postAcknowledgeCountMeter(MetricsName.acknowledge_failure, completedSinkResults);
             }
         } else {
             try {
-                log.debug("Batch regardless of success or failure sink force acknowledging ...");
+                log.debug("{} :: {} :: Batch regardless of success or failure sink force acknowledging ...", groupId, subscriber.getId());
                 ack.acknowledge();
-                log.info("Force sink to acknowledged.");
+                log.info("{} :: {} :: Force sink to acknowledged.", groupId, subscriber.getId());
+
+                postAcknowledgeCountMeter(MetricsName.acknowledge_success, sinkResults);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to sink force acknowledge for %s", ack), ex);
+                log.error(String.format("%s :: %s :: Failed to sink force acknowledge for %s", groupId, subscriber.getId(), ack), ex);
+
+                postAcknowledgeCountMeter(MetricsName.acknowledge_failure, sinkResults);
             }
         }
 
-        sinkTimer.record(Duration.ofNanos(System.nanoTime() - sinkBeginTime));
+        eventPublisher.publishEvent(new TimingMeterEvent(
+                MetricsName.sink_time,
+                topicDesc,
+                null,
+                groupId,
+                subscriber.getId(),
+                Duration.ofNanos(System.nanoTime() - sinkTimerBegin)));
+    }
+
+    private void postAcknowledgeCountMeter(MetricsName metrics,
+                                           Collection<SinkResult> sinkResults) {
+        sinkResults.stream()
+                .map(sr -> new TopicPartition(sr.getRecord().topic(),
+                        sr.getRecord().partition()))
+                .distinct().forEach(tp -> {
+                    eventPublisher.publishEvent(new CountMeterEvent(
+                            metrics,
+                            tp.topic(),
+                            tp.partition(),
+                            groupId,
+                            subscriber.getId(),
+                            null));
+                });
     }
 
     /**
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
      */
     private SinkResult doSinkAsync(ConsumerRecord<String, ObjectNode> filteredRecord, long retryBegin, int retryTimes) {
-        final String key = filteredRecord.key();
-        final ObjectNode value = filteredRecord.value();
-        final long subscribeId = value.remove("$$subscriberId").asLong(-1L);
-        final boolean isSequence = value.remove("$$isSequence").asBoolean(false);
+        //final String key = filteredRecord.key();
+        //final ObjectNode value = filteredRecord.value();
+        final String subscribeId = KafkaUtil.getFirstValueAsString(filteredRecord.headers(), KEY_SUBSCRIBER_ID);
+        final boolean isSequence = KafkaUtil.getFirstValueAsBoolean(filteredRecord.headers(), KEY_IS_SEQUENCE);
 
-        ThreadPoolExecutor executor = this.sharedNonSequenceExecutor;
-        if (isSequence) {
-            //final int mod = (int) subscribeId;
-            final int mod = (int) Math.abs(Crc32Util.compute(key));
-            executor = isolationSequenceExecutors.get(isolationSequenceExecutors.size() % mod);
-        }
-        final Future<? extends SinkCompleted> future = executor.submit(() -> subscribeSink.doSink(subscribeId, isSequence, filteredRecord));
+        // Notice: For reduce the complexity, asynchronous execution is not supported here temporarily, because if the
+        // sink implementation is like producer.send(), it is itself asynchronous, which will generate two layers of
+        // future, and the processing is not concise enough
+        //
+        //// Determine the sink task executor.
+        //final ThreadPoolExecutor executor = determineSinkExecutor(key);
+        //final Future<? extends Serializable> future = executor.submit(() ->
+        //        subscribeSink.doSink(registry, subscribeId, isSequence, filteredRecord));
+        //return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
 
-        return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
-    }
-
-    private ISubscribeSink obtainSubscribeSink() {
-        try {
-            return context.getBean(pipelineConfig.getSink().getCustomSinkBeanName(), ISubscribeSink.class);
-        } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("Could not getting custom subscriber sink of bean %s", pipelineConfig.getSink().getCustomSinkBeanName()));
-        }
+        return new SinkResult(filteredRecord, subscribeSink.doSink(subscribeId, isSequence, filteredRecord),
+                retryBegin, retryTimes);
     }
 
     @Getter
@@ -188,19 +242,10 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     @AllArgsConstructor
     @ToString(callSuper = true)
     static class SinkResult {
-        private ConsumerRecord<String, ObjectNode> filteredRecord;
-        private Future<? extends SinkCompleted> future;
+        private ConsumerRecord<String, ObjectNode> record;
+        private Future<? extends Serializable> future;
         private long retryBegin;
         private int retryTimes;
     }
 
-    public static interface SinkCompleted {
-        public static final SinkCompleted EMPTY = new SinkCompleted() {
-        };
-    }
-
 }
-
-
-
-

@@ -18,31 +18,27 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
-import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.util.Crc32Util;
-import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
-import io.micrometer.core.instrument.Timer;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.CountMeterEvent;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.TimingMeterEvent;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
-import static java.util.Collections.synchronizedList;
+import static java.lang.System.getenv;
 
 /**
  * The {@link AbstractBatchMessageDispatcher}
@@ -55,174 +51,76 @@ import static java.util.Collections.synchronizedList;
 public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
-    protected final ApplicationContext context;
-    protected final KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig;
-    protected final String topicDesc;
+    protected final KafkaSubscribeConfiguration config;
+    protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
-    protected final ThreadPoolExecutor sharedNonSequenceExecutor;
-    protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
+    protected final ApplicationEventPublisher eventPublisher;
+    protected final String topicDesc;
     protected final String groupId;
 
-    public AbstractBatchMessageDispatcher(ApplicationContext context,
-                                          KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig,
+    public AbstractBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+                                          SubscribeEnginePipelineConfig pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
-                                          String groupId,
-                                          String topicDesc) {
-        this.context = Assert2.notNullOf(context, "context");
+                                          ApplicationEventPublisher eventPublisher,
+                                          String topicDesc,
+                                          String groupId) {
+        this.config = Assert2.notNullOf(config, "config");
         this.pipelineConfig = Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = Assert2.notNullOf(registry, "registry");
+        this.eventPublisher = Assert2.notNullOf(eventPublisher, "eventPublisher");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
         this.topicDesc = Assert2.notNullOf(topicDesc, "topicDesc");
-
-        // Create the shared filter single executor.
-        final KafkaSubscriberProperties.GenericProcessProperties processConfig = pipelineConfig.getInternalFilter().getProcessProps();
-        this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
-                processConfig.getSharedExecutorThreadPoolSize(),
-                0L, TimeUnit.MILLISECONDS,
-                // TODO support bounded queue
-                new LinkedBlockingQueue<>(processConfig.getSharedExecutorQueueSize()),
-                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
-        if (processConfig.isExecutorWarmUp()) {
-            this.sharedNonSequenceExecutor.prestartAllCoreThreads();
-        }
-
-        // Create the sequence filter executors.
-        this.isolationSequenceExecutors = synchronizedList(new ArrayList<>(processConfig.getSequenceExecutorsMaxCountLimit()));
-        for (int i = 0; i < processConfig.getSequenceExecutorsMaxCountLimit(); i++) {
-            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1,
-                    0L, TimeUnit.MILLISECONDS,
-                    // TODO support bounded queue
-                    new LinkedBlockingQueue<>(processConfig.getSequenceExecutorsPerQueueSize()),
-                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
-            if (processConfig.isExecutorWarmUp()) {
-                executor.prestartAllCoreThreads();
-            }
-            this.isolationSequenceExecutors.add(executor);
-        }
-    }
-
-    public void init() {
     }
 
     @Override
     public void close() throws IOException {
-        try {
-            log.info("{} :: Closing shared non filter executor...", groupId);
-            this.sharedNonSequenceExecutor.shutdown();
-            log.info("{} :: Closed shared non filter executor.", groupId);
-        } catch (Throwable ex) {
-            log.error(String.format("%s :: Failed to close shared filter executor.", groupId), ex);
-        }
-        this.isolationSequenceExecutors.forEach(executor -> {
-            try {
-                log.info("{} :: Closing filter executor {}...", groupId, executor);
-                executor.shutdown();
-                log.info("{} :: Closed filter executor {}.", groupId, executor);
-            } catch (Throwable ex) {
-                log.error(String.format("%s :: Failed to close filter executor %s.", groupId, executor), ex);
-            }
-        });
     }
 
     @Override
     public void onMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
+        final long sharedConsumedTimerBegin = System.nanoTime();
         try {
-            addCounterMetrics(SubscribeMeter.MetricsName.shared_consumed, topicDesc, groupId);
+            eventPublisher.publishEvent(new CountMeterEvent(
+                    MetricsName.shared_consumed,
+                    topicDesc,
+                    null,
+                    groupId, null, null));
 
-            final Timer timer = addTimerMetrics(SubscribeMeter.MetricsName.shared_consumed_time,
-                    topicDesc, groupId);
-
-            timer.record(() -> doOnMessage(records, ack));
+            doOnMessage(records, ack);
         } catch (Throwable ex) {
             log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
-            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isMoseOnce()) {
+            if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
+        } finally {
+            eventPublisher.publishEvent(new TimingMeterEvent(
+                    MetricsName.shared_consumed_time,
+                    topicDesc,
+                    null,
+                    groupId,
+                    null,
+                    Duration.ofNanos(System.nanoTime() - sharedConsumedTimerBegin)));
         }
     }
 
     protected abstract void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack);
 
-    protected ThreadPoolExecutor determineTaskExecutor(Long subscriberId, boolean isSequence, String key) {
-        ThreadPoolExecutor executor = this.sharedNonSequenceExecutor;
-        if (isSequence) {
-            //final int mod = (int) subscriber.getId();
-            final int mod = (int) Crc32Util.compute(key);
-            final int index = isolationSequenceExecutors.size() % mod;
-            executor = isolationSequenceExecutors.get(index);
-            log.debug("{} :: {} :: determined isolation sequence executor index : {}, mod : {}",
-                    groupId, subscriberId, index, mod);
-        }
-        return executor;
-    }
-
     /**
      * Max retries then give up if it fails.
      */
     protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
-        final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipelineConfig.getInternalFilter().getCheckpoint();
+        final CheckpointConfig checkpoint = pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint();
         return checkpoint.getQos().isMoseOnceOrAnyRetriesAtMost()
                 && (retryTimes > checkpoint.getQoSMaxRetries()
-                || (System.nanoTime() - retryBegin) > checkpoint.getQoSMaxRetriesTimeout().toNanos());
+                || (System.nanoTime() - retryBegin) > Duration.ofMillis(checkpoint.getQoSMaxRetriesTimeout()).toNanos());
     }
 
-    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {
-        addCounterMetrics(metrics, topic, null, groupId);
-    }
-
-    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic,
-                                     Integer partition, String groupId) {
-        addCounterMetrics(metrics, null, topic, partition, groupId);
-    }
-
-    protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, Long subscriberId,
-                                     String topic, Integer partition, String groupId) {
-        final List<String> tags = new ArrayList<>(8);
-        tags.add(SubscribeMeter.MetricsTag.TOPIC);
-        tags.add(topic);
-        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
-        tags.add(groupId);
-        if (Objects.nonNull(subscriberId)) {
-            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
-            tags.add(String.valueOf(subscriberId));
-        }
-        if (Objects.nonNull(partition)) {
-            tags.add(SubscribeMeter.MetricsTag.PARTITION);
-            tags.add(String.valueOf(partition));
-        }
-        SubscribeMeter.getDefault().counter(metrics.getName(), metrics.getHelp(), tags.toArray(new String[0])).increment();
-    }
-
-    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId, String... addTags) {
-        return addTimerMetrics(metrics, null, topic, null, groupId, addTags);
-    }
-
-    protected Timer addTimerMetrics(SubscribeMeter.MetricsName metrics, Long subscriberId, String topic,
-                                    Integer partition, String groupId, String... addTags) {
-        final List<String> tags = new ArrayList<>(8);
-        tags.add(SubscribeMeter.MetricsTag.TOPIC);
-        tags.add(topic);
-        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
-        tags.add(groupId);
-        if (Objects.nonNull(subscriberId)) {
-            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
-            tags.add(String.valueOf(subscriberId));
-        }
-        if (Objects.nonNull(partition)) {
-            tags.add(SubscribeMeter.MetricsTag.PARTITION);
-            tags.add(String.valueOf(partition));
-        }
-        if (Objects.nonNull(addTags)) {
-            tags.addAll(Arrays.asList(addTags));
-        }
-        final String[] tagArray = tags.toArray(new String[0]);
-        return SubscribeMeter.getDefault().timer(metrics.getName(), metrics.getHelp(),
-                SubscribeMeter.DEFAULT_PERCENTILES, tagArray);
-    }
+    public static final String KEY_SUBSCRIBER_ID = getenv().getOrDefault("INTERNAL_SUBSCRIBER_ID", "$$sub");
+    public static final String KEY_IS_SEQUENCE = getenv().getOrDefault("INTERNAL_IS_SEQUENCE", "$$seq");
 
 }
 

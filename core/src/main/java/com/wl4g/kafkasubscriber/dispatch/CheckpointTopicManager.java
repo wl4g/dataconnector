@@ -17,19 +17,34 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
-import com.wl4g.infra.common.lang.TypeConverts;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.exception.TopicConfigurationException;
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.*;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.util.unit.DataSize;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.Config;
+import org.apache.kafka.clients.admin.ConfigEntry;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 
-import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -37,9 +52,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
-import static java.util.stream.Collectors.toMap;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.kafka.clients.producer.ProducerConfig.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.common.config.TopicConfig.RETENTION_BYTES_CONFIG;
 import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
@@ -52,64 +68,232 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
  **/
 @Slf4j
 @AllArgsConstructor
-public class CheckpointTopicManager implements ApplicationRunner {
-    private final KafkaSubscriberProperties config;
+public class CheckpointTopicManager {
+    private final KafkaSubscribeConfiguration config;
+    private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
 
-    @Override
-    public void run(ApplicationArguments args) {
-        addTopicAllIfNecessary();
-    }
-
-    public void addTopicAllIfNecessary() {
-        log.info("Creating topics if necessary of {} ...", config.getPipelines().size());
+    /**
+     * Create the all pipeline topics and configuration to the subscribers (if necessary)
+     *
+     * @param timeout The timeout period for calling the broker asynchronously at each step.
+     */
+    public void initPipelinesTopicIfNecessary(int timeout) throws TopicConfigurationException {
+        log.info("Initializing all pipeline topics if necessary of {} ...", config.getPipelines().size());
         config.getPipelines().forEach(pipeline -> {
-            final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipeline.getInternalFilter().getCheckpoint();
-            final String brokerServers = checkpoint.getDefaultProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
-            try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG,
-                    brokerServers))) {
-                final String topicPrefix = pipeline.getInternalFilter().getTopicPrefix();
-                final int partitions = pipeline.getInternalFilter().getTopicPartitions();
-                final short replicationFactor = pipeline.getInternalFilter().getReplicationFactor();
-
-                final List<NewTopic> topics = safeList(registry.getAll()).stream()
-                        .map(subscriber -> String.format("%s-%s", topicPrefix, subscriber.getId()))
-                        .map(topic -> {
-                            final Map<String, String> topicConfigs = checkpoint.getDefaultTopicProps()
-                                    .entrySet().stream().collect(toMap(e -> (String) e.getKey(), e -> (String) e.getValue()));
-
-                            topicConfigs.put(RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1).toMillis()));
-                            topicConfigs.put(RETENTION_BYTES_CONFIG, String.valueOf(DataSize.ofGigabytes(1).toBytes()));
-                            return new NewTopic(topic, partitions, replicationFactor).configs(topicConfigs);
-                        })
-                        .collect(toList());
-
-                // TODO if create checkpoint filtered topic failure, how to process??? forever retry???
-                // e.g Timed out waiting for a node assignment. Call: listTopics
-                doCreateTopicsIfNecessary(adminClient, topics, 6000);
+            try {
+                addSubscribersTopicIfNecessary(pipeline, registry.getSubscribers(pipeline.getName()), timeout);
             } catch (Throwable ex) {
-                log.error(String.format("Failed to create topics of %s", config.getPipelines().size()), ex);
+                throw new TopicConfigurationException(String.format("Failed to create topics of pipeline %s",
+                        pipeline.getName()), ex);
             }
         });
     }
 
-    public static void doCreateTopicsIfNecessary(AdminClient adminClient,
-                                                 List<NewTopic> topics,
-                                                 long timeout) throws ExecutionException, InterruptedException, TimeoutException {
-        log.info("Creating topics: {}", topics);
+    /**
+     * Create the topic and configuration to the subscribers (if necessary)
+     *
+     * @param pipeline    pipeline config.
+     * @param subscribers subscribers.
+     * @param timeout     The timeout period for calling the broker asynchronously at each step.
+     */
+    public void addSubscribersTopicIfNecessary(SubscribeEnginePipelineConfig pipeline,
+                                               Collection<SubscriberInfo> subscribers,
+                                               int timeout) throws TopicConfigurationException {
+        Assert2.notNullOf(pipeline, "pipeline");
+        log.info("{} :: Creating topics if necessary of {} ...", pipeline.getName(),
+                config.getPipelines().size());
 
-        final ListTopicsResult listResult = adminClient.listTopics(new ListTopicsOptions().timeoutMs(TypeConverts.safeLongToInt(timeout)));
-        final Set<String> existingTopics = listResult.names().get(timeout, TimeUnit.MILLISECONDS);
-        log.info("Skip to create existing topics: {}", existingTopics);
+        final String topicPrefix = pipeline.getParsedFilter().getFilterConfig().getTopicPrefix();
+        final int partitions = pipeline.getParsedFilter().getFilterConfig().getTopicPartitions();
+        final short replicationFactor = pipeline.getParsedFilter().getFilterConfig().getReplicationFactor();
 
-        final List<NewTopic> newTopics = safeList(topics).stream()
-                .filter(topic -> !existingTopics.contains(topic.name()))
+        final CheckpointConfig checkpoint = pipeline.getParsedFilter().getFilterConfig()
+                .getCheckpoint();
+        // TODO may per subscriber a consumer properties(brokers)
+        String brokerServers = checkpoint.getProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
+        brokerServers = isBlank(brokerServers) ? checkpoint.getProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG) : brokerServers;
+
+        try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG, brokerServers))) {
+            createOrUpdateBatchTopicsIfNecessary(adminClient, pipeline.getName(), topicPrefix,
+                    partitions, replicationFactor, brokerServers, customizer, subscribers)
+                    .get(timeout, TimeUnit.MILLISECONDS);
+        } catch (ExecutionException | InterruptedException | TimeoutException ex) {
+            throw new TopicConfigurationException(ex);
+        }
+    }
+
+    public static KafkaFuture<Object> createOrUpdateBatchTopicsIfNecessary(
+            AdminClient adminClient,
+            String pipelineName,
+            String topicPrefix,
+            int partitions,
+            short replicationFactor,
+            String brokerServers,
+            SubscribeEngineCustomizer customizer,
+            Collection<SubscriberInfo> subscribers) {
+
+        final List<AlterTopicConfig> topics = safeList(subscribers).stream()
+                .map(subscriber -> {
+                    // TODO add support more topic config props.
+                    final Map<String, String> overrideItems = new HashMap<>();
+                    overrideItems.put(RETENTION_MS_CONFIG, String.valueOf(subscriber.getSettings().getLogRetentionTime().toMillis()));
+                    overrideItems.put(RETENTION_BYTES_CONFIG, String.valueOf(subscriber.getSettings().getLogRetentionBytes().toBytes()));
+                    return new AlterTopicConfig(customizer.generateCheckpointTopic(pipelineName,
+                            topicPrefix, subscriber.getId()), subscriber, overrideItems);
+                })
+                .collect(toList());
+
+        return adminClient
+                .listTopics() // Listing of all topics config.
+                .names() // getting topic names.
+                .thenApply(allTopicNames -> {
+                    log.info("{} :: List to existing topics: {}", brokerServers, allTopicNames);
+
+                    KafkaFuture<Void> createFuture = null;
+                    KafkaFuture<Object> updateFuture = null;
+
+                    // Create new topics.
+                    log.info("{} :: Creating to topics: {}", brokerServers, topics);
+                    final List<AlterTopicConfig> newTopics = safeList(topics).stream()
+                            .filter(topic -> !allTopicNames.contains(topic.getTopic()))
+                            .collect(Collectors.toList());
+
+                    if (!newTopics.isEmpty()) {
+                        final List<NewTopic> _newTopics = newTopics.stream()
+                                .map(topic -> {
+                                    final NewTopic newTopic = new NewTopic(topic.getTopic(), partitions, replicationFactor);
+                                    newTopic.configs(safeMap(topic.getExpectedUpdateItems()));
+                                    return newTopic;
+                                })
+                                .collect(toList());
+
+                        createFuture = adminClient.createTopics(_newTopics).all();
+                        log.info("{} :: Created new topics: {}", brokerServers, newTopics);
+                    }
+
+                    // Update new topics name.
+                    final List<AlterTopicConfig> updateTopics = safeList(topics).stream()
+                            .filter(topic -> allTopicNames.contains(topic.getTopic()))
+                            .collect(toList());
+                    try {
+                        updateFuture = updateBatchTopicsIfNecessary(adminClient, brokerServers, updateTopics);
+                    } catch (Throwable ex) {
+                        throw new RuntimeException(ex);
+                    }
+
+                    return KafkaFuture.allOf(createFuture, updateFuture);
+                });
+    }
+
+    public static KafkaFuture<Object> updateBatchTopicsIfNecessary(
+            AdminClient adminClient,
+            String brokerServers,
+            List<AlterTopicConfig> updateTopics) {
+
+        // Convert to topic->subscriber map.
+        final Map<String, AlterTopicConfig> updateTopicMap = updateTopics.stream()
+                .collect(Collectors.toMap(AlterTopicConfig::getTopic, e -> e));
+
+        final Set<String> topicNames = updateTopicMap.keySet();
+        log.info("{} :: Updating to topics: {}", brokerServers, topicNames);
+
+        // Getting existing topics config.
+        final List<ConfigResource> topicConfigResources = safeList(updateTopics)
+                .stream()
+                .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic.getTopic()))
                 .collect(Collectors.toList());
 
-        final CreateTopicsResult createResult = adminClient.createTopics(newTopics);
+        return adminClient
+                .describeConfigs(topicConfigResources)
+                .all()
+                .thenApply(existingConfigMap -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("{} :: topics: {}, existing config items: {}", brokerServers, topicNames, existingConfigMap);
+                    }
 
-        createResult.all().get(timeout, TimeUnit.MILLISECONDS);
-        log.info("Created new topics: {}", newTopics);
+                    // Wrap per topic update alter config OP. (If necessary)
+                    final Map<ConfigResource, Collection<AlterConfigOp>> alterConfigs = safeMap(existingConfigMap)
+                            .entrySet()
+                            .stream()
+                            .filter(existing -> {
+                                // If any config item is not the expected value, it needs to be update, otherwise not need update.
+                                final Map<String, String> expectedUpdateItems = updateTopicMap.get(existing.getKey().name())
+                                        .getExpectedUpdateItems();
+                                return !expectedUpdateItems.entrySet().stream().allMatch(e1 ->
+                                        existing.getValue().entries().stream().anyMatch(e2 -> StringUtils.equals(e1.getKey(), e2.name())
+                                                && StringUtils.equals(e1.getValue(), e2.value())));
+                            })
+                            .collect(Collectors.toMap(
+                                    Map.Entry::getKey,
+                                    existing -> {
+                                        final Map<String, String> expectedUpdateItems = updateTopicMap.get(existing.getKey().name())
+                                                .getExpectedUpdateItems();
+                                        final List<ConfigEntry> entries = new ArrayList<>(existing.getValue().entries());
+                                        // Add the update topic config items.
+                                        entries.addAll(safeMap(expectedUpdateItems)
+                                                .entrySet()
+                                                .stream()
+                                                .map(e2 -> new ConfigEntry(e2.getKey(), e2.getValue())).collect(toList()));
+                                        // Convert to alter config OP
+                                        return entries.stream().map(entry -> new AlterConfigOp(entry,
+                                                AlterConfigOp.OpType.SET)).collect(toList());
+                                    }
+                            ));
+                    if (log.isDebugEnabled()) {
+                        log.debug("{} :: topics: {}, new config items: {}", brokerServers, topicNames, alterConfigs);
+                    }
+
+                    // Do batch alter topics config.
+                    // If kafka broker >= 2.3.0
+                    return adminClient
+                            // Alter by incremental configs.
+                            .incrementalAlterConfigs(alterConfigs)
+                            .all()
+                            .whenComplete((unused, ex) -> {
+                                if (Objects.isNull(ex)) {
+                                    log.info("{} :: Updated to topics: {}", brokerServers, topicNames);
+                                    return;
+                                }
+                                final Throwable reason = ExceptionUtils.getRootCause(ex);
+                                // for compatible, if kafka broker < 2.3.0
+                                if (reason instanceof UnsupportedVersionException) {
+                                    log.warn("{} :: broker unsupported incremental alter, and fallback full alter config items.",
+                                            brokerServers);
+                                    // Convert to older version full alter config.
+                                    final Map<ConfigResource, Config> newConfigMapFull = alterConfigs
+                                            .entrySet().stream()
+                                            .collect(Collectors.toMap(
+                                                    Map.Entry::getKey,
+                                                    e -> new Config(safeList(e.getValue()).stream()
+                                                            .map(AlterConfigOp::configEntry)
+                                                            .collect(Collectors.toList()))));
+
+                                    // Alter by full configs.
+                                    adminClient
+                                            .alterConfigs(newConfigMapFull)
+                                            .all()
+                                            .whenComplete((unused2, ex2) -> {
+                                                log.info("{} :: Updated to topics: {}", brokerServers, topicNames);
+                                                if (Objects.nonNull(ex2)) {
+                                                    throw new TopicConfigurationException(String.format("%s :: Failed to full alter topics config of %s",
+                                                            brokerServers, updateTopics), ex);
+                                                }
+                                            });
+                                } else {
+                                    throw new TopicConfigurationException(String.format("%s :: Failed to incremental alter topics config of %s",
+                                            brokerServers, updateTopics), ex);
+                                }
+                            });
+                });
+    }
+
+    @Getter
+    @AllArgsConstructor
+    static class AlterTopicConfig {
+        private final String topic;
+        private final SubscriberInfo subscriber;
+        private final Map<String, String> expectedUpdateItems;
     }
 
 }

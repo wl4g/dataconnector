@@ -17,10 +17,11 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+import java.io.Serializable;
+import java.util.concurrent.Future;
 
 /**
  * The {@link DefaultPrintSubscribeSink}
@@ -29,17 +30,22 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @since v1.0
  **/
 @Slf4j
-public class DefaultPrintSubscribeSink implements ISubscribeSink {
+public class DefaultPrintSubscribeSink extends AbstractSubscribeSink {
 
-    public static final String BEAN_NAME = "defaultSubscribeSink";
+    public static final String TYPE_NAME = "PRINT";
 
     @Override
-    public SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                                                     long subscriberId,
-                                                                     boolean sequence,
-                                                                     ConsumerRecord<String, ObjectNode> record) {
-        log.info("----- This is a default printer sink, and you should customize the implementation of sink logic ! -----\n{}", record);
-        return SinkSubscriberBatchMessageDispatcher.SinkCompleted.EMPTY;
+    public String getType() {
+        return TYPE_NAME;
+    }
+
+    @Override
+    public Future<? extends Serializable> doSink(String subscriberId,
+                                                 boolean sequence,
+                                                 ConsumerRecord<String, ObjectNode> record) {
+        log.info("----- This is a default printer sink, and you should customize " +
+                "the implementation of sink logic ! -----\nsubscriberId: {}\nrecord: {}", subscriberId, record);
+        return super.doSink(subscriberId, sequence, record);
     }
 
 }

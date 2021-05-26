@@ -16,15 +16,13 @@
 
 package com.wl4g.kafkasubscriber.exception;
 
-import java.util.concurrent.ExecutionException;
-
 /**
  * The {@link GiveUpRetryExecutionException}
  *
  * @author James Wong
  * @since v1.0
  **/
-public class GiveUpRetryExecutionException extends ExecutionException {
+public class GiveUpRetryExecutionException extends KafkaSubscribeException {
 
     protected GiveUpRetryExecutionException() {
     }

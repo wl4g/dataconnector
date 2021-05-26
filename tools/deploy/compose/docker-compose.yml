@@ -12,46 +12,88 @@ version: "3"
 
 networks:
   subscriber_net:
-    name: subscriber_net
     driver: bridge
 
 services:
-  zookeeper:
+  zookeeper01:
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_zookeeper:3.6.2 # docker.io/bitnami/zookeeper:3.6.2
-    container_name: zookeeper
-    hostname: zookeeper
+    container_name: zookeeper01
+    hostname: zookeeper01
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_PORT_NUMBER=12181
     restart: unless-stopped
     networks:
       - subscriber_net
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-      - zookeeper_data:/opt/bitnami/zookeeper/data:rw
+      #- zookeeper01_data:/opt/bitnami/zookeeper/data:rw
     ports:
-      - 2181:2181
+      - 12181:12181
 
-  kafka: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
+  zookeeper02:
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_zookeeper:3.6.2 # docker.io/bitnami/zookeeper:3.6.2
+    container_name: zookeeper02
+    hostname: zookeeper02
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_PORT_NUMBER=22181
+    restart: unless-stopped
+    networks:
+      - subscriber_net
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      #- zookeeper02_data:/opt/bitnami/zookeeper/data:rw
+    ports:
+      - 22181:22181
+
+  kafka01: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
-    container_name: kafka
-    hostname: kafka
+    container_name: kafka01
+    hostname: kafka01
     environment:
       - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka01:19092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:19092
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper01:12181
     restart: unless-stopped
     networks:
       - subscriber_net
     depends_on:
-      - zookeeper
+      - zookeeper01
     ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
     #user: 1001:1000
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-      #- kafka_data:/bitnami/kafka/data:rw
+      #- kafka01_data:/bitnami/kafka/data:rw
     ports:
-      - 9092:9092
+      - 19092:19092
+
+  kafka02: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
+    container_name: kafka02
+    hostname: kafka02
+    environment:
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka02:29092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:29092
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper02:22181
+    restart: unless-stopped
+    networks:
+      - subscriber_net
+    depends_on:
+      - zookeeper02
+    ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
+    #user: 1001:1000
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      #- kafka02_data:/bitnami/kafka/data:rw
+    ports:
+      - 29092:29092
 
   ## see:https://github.com/provectus/kafka-ui/blob/v0.7.1/documentation/compose/kafka-ui.yaml
   kafka_ui:
@@ -60,8 +102,10 @@ services:
     hostname: kafka_ui
     environment:
       - JAVA_OPTS=-Djava.net.preferIPv4Stack=true -Xmx1G
-      - KAFKA_CLUSTERS_0_NAME=local
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_NAME=dev-kafka01
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka01:19092
+      - KAFKA_CLUSTERS_1_NAME=dev-kafka02
+      - KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS=kafka02:29092
       #- KAFKA_CLUSTERS_0_METRICS_PORT=9997
       #- KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://schemaregistry0:8085
       #- KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=first
@@ -70,13 +114,15 @@ services:
     networks:
       - subscriber_net
     depends_on:
-      - zookeeper
-      - kafka
+      - zookeeper01
+      - zookeeper02
+      - kafka01
+      - kafka02
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - 8080:8080
+      - 38080:8080
 
 #  kafka-subscriber:
 #    image: docker.io/wl4g/kafka-subscriber:1.0.0
@@ -95,9 +141,11 @@ services:
 #      - 8000:8000
 
 volumes:
-  zookeeper_data:
-    name: subscriber_zookeeper_data
+  zookeeper01_data:
     driver: local
-  kafka_data:
-    name: subscriber_kafka_data
+  zookeeper02_data:
+    driver: local
+  kafka01_data:
+    driver: local
+  kafka02_data:
     driver: local

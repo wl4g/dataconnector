@@ -1,0 +1,27 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="QuickStartApplicationIT_with_rcdev" type="Application" factoryName="Application">
+    <option name="ALTERNATIVE_JRE_PATH" value="1.8" />
+    <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
+    <envs>
+      <env name="IT_KAFKA_SERVERS_01" value="10.74.34.131:19092" />
+      <env name="IT_KAFKA_SERVERS_02" value="10.74.34.131:29092" />
+      <env name="IT_KAFKA_EMBEDDED_ENABLE" value="false" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.wl4g.kafkasubscriber.quickstart.QuickStartApplicationIT" />
+    <module name="kafka-subscriber.core.test" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="com.wl4g.kafkasubscriber.quickstart.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <extension name="software.aws.toolkits.jetbrains.core.execution.JavaAwsConnectionExtension">
+      <option name="credential" />
+      <option name="region" />
+      <option name="useCurrentConnection" value="false" />
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

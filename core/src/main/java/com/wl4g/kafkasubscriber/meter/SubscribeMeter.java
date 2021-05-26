@@ -64,19 +64,23 @@ public class SubscribeMeter extends PrometheusMeterFacade {
 
         shared_consumed_time("shared_consumed_time", "The stats of shared consumed latency"),
 
-        filter_records_success("filter_records_success", "The stats of filter records success"),
+        filter_records_success("filter_records_success", "The stats of filtering records success"),
 
-        filter_records_failure("filter_records_failure", "The stats of filter records failure"),
+        filter_records_failure("filter_records_failure", "The stats of filtering records failure"),
 
         filter_records_time("filter_time", "The stats of filter latency"),
 
-        filter_records_sent_success("filter_records_sent", "The stats of filter records sent success"),
+        checkpoint_sent_success("checkpoint_sent", "The stats of filtered sent to checkpoint topic success"),
 
-        filter_records_sent_failure("filter_records_sent", "The stats of filter records sent failure"),
+        checkpoint_sent_failure("checkpoint_sent", "The stats of filtered sent to checkpoint topic failure"),
 
-        filter_records_sent_time("filter_time", "The stats of filter sent latency"),
+        checkpoint_sent_time("checkpoint_time", "The stats of filtered sent to checkpoint topic latency"),
 
-        acknowledge_time("acknowledge_time", "The stats of commit acknowledge latency"),
+        acknowledge_success("acknowledge_success", "The stats of acknowledge offset success"),
+
+        acknowledge_failure("acknowledge_failure", "The stats of acknowledge offset failure"),
+
+        acknowledge_time("acknowledge_time", "The stats of acknowledge offset latency"),
 
         sink_records_success("sink_records_success", "The stats of sink records success"),
 
