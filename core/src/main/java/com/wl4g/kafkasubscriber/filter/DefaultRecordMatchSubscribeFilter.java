@@ -38,7 +38,7 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 @Slf4j
 public class DefaultRecordMatchSubscribeFilter implements ISubscribeFilter {
 
-    public static final String BEAN_NAME = "defaultSubscribeFilter";
+    public static final String BEAN_NAME = "defaultRecordMatchSubscribeFilter";
 
     private final AtomicLong lastUpdateTime = new AtomicLong(0);
 

@@ -21,6 +21,77 @@ server:
   servlet:
     contextPath: /
 
+kafka-subscriber:
+  bases:
+    consumerProps: &baseConsumerProps
+      request.timeout.ms: 30000
+      auto.offset.reset: earliest
+    processProps: &baseProcessProps
+      sharedExecutorThreadPoolSize: 50
+      sharedExecutorQueueSize: 500
+      sequenceExecutorsMaxCountLimit: 100
+      sequenceExecutorsPerQueueSize: 100
+      executorWarmUp: true
+
+  pipelines:
+    - source:
+        topicPattern: "test-input"
+        parallelism: 2
+        matchToSubscriberUpdateDelayTime: 3s
+        consumerProps:
+          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+          group.id: "shared_source_101"
+          <<: *baseConsumerProps
+      filter:
+        topicPrefix: "shared_filtered_"
+        topicPartitions: 10
+        replicationFactor: 1
+        customFilterBeanName: defaultRecordMatchSubscribeFilter # By default: defaultRecordMatchSubscribeFilter
+        processProps:
+          <<: *baseProcessProps
+        checkpoint:
+          qoS: 2 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
+          qoSMaxRetries: 5
+          qoSMaxRetriesTimeout: 6h
+          producerMaxCountLimit: 100
+          defaultTopicProps:
+            cleanup.policy: "delete"
+            retention.ms: 86400000 # By default: 1day
+            retention.bytes: 1073741824 # By default: 1G
+          defaultProducerProps:
+            bootstrap.servers: "localhost:9092"
+            acks: "0"
+            request.timeout.ms: 30000
+            max.request.size: 1048576
+            send.buffer.bytes: 131072
+            retries: 5
+            retry.backoff.ms: 6000
+            compression.type: gzip
+      sink:
+        enable: true
+        groupIdPrefix: "isolation_sink_"
+        customSinkBeanName: defaultSubscribeSink # By default: defaultSubscribeSink
+        parallelism: 2
+        consumerProps:
+          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+          <<: *baseConsumerProps
+        processProps:
+          <<: *baseProcessProps
+
+  subscribers:
+    - id: 1001
+      name: "subscriber_0"
+      enable: true
+      tenantId: "6382bb26e7e81a0047bee709"
+      settings:
+        isSequence: false
+        logRetentionTime: 1d
+        logRetentionSize: 1GB
+        properties:
+          defaultRecordMatchSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+          # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
+          6382bb26e7e81a0047bee709: '{"bootstrap.servers":"${IT_KAFKA_SERVERS:localhost:9092}"}'
+
 management:
   server:
     address: 0.0.0.0
@@ -42,91 +113,3 @@ management:
       basePath: /actuator
       exposure:
         include: '*'
-
-kafka-subscriber:
-  definitions:
-    ## Notice: The following configuration method is usually used in experimental scenarios to
-    ## define the subscriber list. When integrating into actual business applications, the interface
-    ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
-    subscribers:
-      - id: 1001
-        name: "subscriber_0"
-        enable: true
-        tenantId: "6382bb26e7e81a0047bee709"
-        settings:
-          isSequence: false
-          logRetentionTime: 1d
-          logRetentionSize: 1GB
-          properties:
-            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
-            # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
-            6382bb26e7e81a0047bee709: '{"bootstrap.servers":"${IT_KAFKA_SERVERS:localhost:9092}"}'
-    bases:
-      consumerProps: &baseConsumerProps
-        request.timeout.ms: 30000
-        auto.offset.reset: earliest
-      processProps: &baseProcessProps
-        sharedExecutorThreadPoolSize: 50
-        sharedExecutorQueueSize: 500
-        sequenceExecutorsMaxCountLimit: 100
-        sequenceExecutorsPerQueueSize: 100
-        executorWarmUp: true
-    sources:
-      - name: kafka01
-        topicPattern: "test-input"
-        parallelism: 2
-        matchToSubscriberUpdateDelayTime: 3s
-        consumerProps:
-          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "shared_source_101"
-          <<: *baseConsumerProps
-      - name: kafka02
-        topicPattern: "test-input"
-        parallelism: 2
-        matchToSubscriberUpdateDelayTime: 3s
-        consumerProps:
-          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "shared_source_102"
-          <<: *baseConsumerProps
-    filters:
-      - name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
-        topicPrefix: "shared_filtered_"
-        topicPartitions: 10
-        replicationFactor: 1
-        processProps:
-          <<: *baseProcessProps
-        checkpoint:
-          qoS: 2 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
-          qoSMaxRetries: 5
-          qoSMaxRetriesTimeout: 6h
-          producerMaxCountLimit: 100
-          defaultTopicProps:
-            cleanup.policy: "delete"
-            retention.ms: 86400000 # By default: 1day
-            retention.bytes: 1073741824 # By default: 1G
-          defaultProducerProps:
-            bootstrap.servers: "localhost:9092"
-            acks: "0"
-            request.timeout.ms: 30000
-            max.request.size: 1048576
-            send.buffer.bytes: 131072
-            retries: 5
-            retry.backoff.ms: 6000
-            compression.type: gzip
-    sinks:
-      - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
-        groupIdPrefix: "isolation_sink_"
-        parallelism: 2
-        processProps:
-          <<: *baseProcessProps
-
-  pipelines:
-    - name: defaultPipeline
-      # Required (default: [])
-      sources:
-        - kafka01
-        - kafka02
-      # Required (default: defaultSubscribeFilter)
-      filter: defaultSubscribeFilter
-      # Optional (default: defaultSubscribeSink)
-      sink: defaultSubscribeSink

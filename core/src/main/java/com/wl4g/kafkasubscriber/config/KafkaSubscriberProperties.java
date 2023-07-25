@@ -23,7 +23,6 @@ import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.config.TopicConfig;
@@ -32,19 +31,10 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.unit.DataSize;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.Null;
+import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.*;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
-import static java.util.stream.Collectors.toList;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.kafka.clients.consumer.ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG;
-import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG;
 
 /**
  * The {@link KafkaSubscriberProperties}
@@ -59,75 +49,38 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMI
 @ToString
 @NoArgsConstructor
 public class KafkaSubscriberProperties implements InitializingBean {
-    private @Builder.Default DefinitionProperties definitions = new DefinitionProperties();
-    private @Builder.Default List<EnginePipelineProperties> pipelines = new ArrayList<>(1);
+    public static final String LOCAL_PROCESS_ID = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+
+    private @Builder.Default List<SubscribePipelineProperties> pipelines = new ArrayList<>();
+    private @Builder.Default List<SubscriberInfo> subscribers = new ArrayList<>(2);
 
     @Override
     public void afterPropertiesSet() {
-        try {
-            preValidateProperties();
-            initParse();
-            optimizeProperties();
-        } catch (Throwable th) {
-            log.error("Failed to init subscriber properties", th);
-            throw th;
-        }
+        pipelines.forEach(SubscribePipelineProperties::validate);
+        preOptimizeProperties();
     }
 
-    private void preValidateProperties() {
-        definitions.validate();
-        pipelines.forEach(EnginePipelineProperties::validate);
-    }
-
-    private void initParse() {
-        safeList(pipelines).forEach(p -> {
-            // Parse the sources.
-            final List<SourceProperties> sources = safeList(p.getSources()).stream()
-                    .map(s -> definitions.getSources().stream()
-                            .filter(source -> StringUtils.equals(source.getName(), s))
-                            .findFirst().orElseThrow(() -> new IllegalArgumentException(String.format("Invalid to source '%s'", s))))
-                    .collect(Collectors.toList());
-            p.setInternalSources(sources);
-
-            // Parse the filter.
-            final FilterProperties filter = safeList(definitions.getFilters()).stream()
-                    .filter(f -> StringUtils.equals(f.getName(), p.getFilter()))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException(String.format("Invalid to filter '%s'", p.getFilter())));
-            p.setInternalFilter(filter);
-
-            // Parse the sink.
-            if (isNotBlank(p.getSink())) {
-                final SinkProperties sink = safeList(definitions.getSinks()).stream()
-                        .filter(s -> StringUtils.equals(s.getName(), p.getSink()))
-                        .findFirst().orElseThrow(() -> new IllegalArgumentException(String.format("Invalid to sink '%s'", p.getSink())));
-                p.setInternalSink(sink);
-            }
-        });
-    }
-
-    private void optimizeProperties() {
-        definitions.getSources().forEach(source -> {
+    private void preOptimizeProperties() {
+        pipelines.forEach(p -> {
             // The filter message handler is internally hardcoded to use JsonNode.
-            source.getConsumerProps().put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
+            p.getSource().getConsumerProps().put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
 
-            // TODO checking by merge to sources and filter with pipeline
             // Should be 'max.poll.records' equals to filter executor queue size.
-//            final Object originalMaxPollRecords = source.getConsumerProps().get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
-//            source.getConsumerProps().put(MAX_POLL_RECORDS_CONFIG,
-//                    String.valueOf(source.getFilter().getProcessProps().getSharedExecutorQueueSize()));
-//            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
-//                    MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, source.getFilter().getProcessProps()
-//                            .getSharedExecutorQueueSize(), source.getGroupId());
+            final Object originalMaxPollRecords = p.getSource().getConsumerProps().get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
+            p.getSource().getConsumerProps().put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(p.getFilter().getProcessProps().getSharedExecutorQueueSize()));
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, p.getFilter().getProcessProps()
+                            .getSharedExecutorQueueSize(), p.getSource().getGroupId());
 
             // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
-            source.getConsumerProps().put(ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ALLOW_AUTO_CREATE_TOPICS_CONFIG,
-                    source.getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG), "true", source.getGroupId());
+            p.getSource().getConsumerProps().put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, originalMaxPollRecords, "true", p.getSource().getGroupId());
 
             // Mandatory manual commit.
-            source.getConsumerProps().put(ENABLE_AUTO_COMMIT_CONFIG, "false");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ENABLE_AUTO_COMMIT_CONFIG,
-                    source.getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG), "false", source.getGroupId());
+            p.getSource().getConsumerProps().put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+                    ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, originalMaxPollRecords, "false", p.getSource().getGroupId());
         });
     }
 
@@ -136,51 +89,15 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class DefinitionProperties {
-        private @Builder.Default List<SubscriberInfo> subscribers = new ArrayList<>(2);
-        private @Builder.Default List<SourceProperties> sources = new ArrayList<>(2);
-        private @Builder.Default List<FilterProperties> filters = new ArrayList<>(2);
-        private @Builder.Default List<SinkProperties> sinks = new ArrayList<>(2);
+    public static class SubscribePipelineProperties {
+        private @Builder.Default SourceProperties source = new SourceProperties();
+        private @Builder.Default FilterProperties filter = new FilterProperties();
+        private @Builder.Default SinkProperties sink = new SinkProperties();
 
         public void validate() {
-            subscribers.forEach(SubscriberInfo::validate);
-            sources.forEach(SourceProperties::validate);
-            filters.forEach(FilterProperties::validate);
-            sinks.forEach(SinkProperties::validate);
-            // Check for sources name duplicate.
-            Assert2.isTrueOf(sources.size() == new HashSet<>(sources.stream()
-                    .map(SourceProperties::getName).collect(toList())).size(), "sources name duplicate");
-            // Check for filters name duplicate.
-            Assert2.isTrueOf(filters.size() == new HashSet<>(filters.stream()
-                    .map(FilterProperties::getName).collect(toList())).size(), "filters name duplicate");
-            // Check for sinks name duplicate.
-            Assert2.isTrueOf(sinks.size() == new HashSet<>(sinks.stream()
-                    .map(SinkProperties::getName).collect(toList())).size(), "sinks name duplicate");
-        }
-    }
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString
-    @NoArgsConstructor
-    public static class EnginePipelineProperties {
-        private String name;
-        private @Builder.Default List<String> sources = new ArrayList<>(1);
-        private @Builder.Default String filter = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
-        private @Builder.Default String sink = DefaultPrintSubscribeSink.BEAN_NAME;
-        // Convert to transient properties.
-        private transient @NotEmpty List<SourceProperties> internalSources;
-        private transient @NotBlank FilterProperties internalFilter;
-        private transient @Null SinkProperties internalSink;
-
-        public void validate() {
-            Assert2.hasTextOf(name, "name");
-            Assert2.notEmptyOf(sources, "sources");
-            Assert2.hasTextOf(filter, "filter");
-            Assert2.hasTextOf(sink, "sink");
-            // Check for sources name duplicate.
-            Assert2.isTrueOf(sources.size() == new HashSet<>(sources).size(), "sources name duplicate");
+            source.validate();
+            filter.validate();
+            sink.validate();
         }
     }
 
@@ -193,7 +110,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
 
         public SourceProperties() {
-            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_0");
+            getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_".concat(LOCAL_PROCESS_ID));
         }
 
         @Override
@@ -214,17 +131,17 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static class FilterProperties {
-        private @Builder.Default String name = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
         private @Builder.Default String topicPrefix = "shared_filtered_";
         private @Builder.Default int topicPartitions = 10;
         private @Builder.Default short replicationFactor = 1;
+        private @Builder.Default String customFilterBeanName = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
         private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
         private @Builder.Default CheckpointProperties checkpoint = new CheckpointProperties();
 
         public void validate() {
             this.processProps.validate();
             Assert2.hasTextOf(topicPrefix, "topicPrefix");
-            Assert2.hasTextOf(name, "customFilterBeanName");
+            Assert2.hasTextOf(customFilterBeanName, "customFilterBeanName");
             Assert2.notNullOf(checkpoint, "checkpoint");
             checkpoint.validate();
         }
@@ -233,18 +150,19 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Getter
     @Setter
     @SuperBuilder
+    @NoArgsConstructor
     @ToString
     public static class SinkProperties extends BaseConsumerProperties {
         private @Builder.Default String groupIdPrefix = "isolation_sink_";
+        private @Builder.Default String customSinkBeanName = DefaultPrintSubscribeSink.BEAN_NAME;
+        private @Builder.Default boolean enable = true;
         private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
-
-        public SinkProperties() {
-            setName(DefaultPrintSubscribeSink.BEAN_NAME);
-        }
 
         public void validate() {
             super.validate();
             Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
+            Assert2.hasTextOf(customSinkBeanName, "customSinkBeanName");
+            Assert2.notNullOf(enable, "enable");
             getProcessProps().validate();
         }
     }
@@ -255,7 +173,6 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static abstract class BaseConsumerProperties {
-        private String name;
         // By force: min(concurrency, topicPartitions.length)
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         // But it's a pity that spring doesn't get it dynamically from broker.
@@ -284,8 +201,8 @@ public class KafkaSubscriberProperties implements InitializingBean {
             }
         };
 
+
         public void validate() {
-            Assert2.hasTextOf(name, "name");
             Assert2.isTrueOf(parallelism > 0, "parallelism > 0");
             Assert2.notNullOf(consumerProps.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
         }
