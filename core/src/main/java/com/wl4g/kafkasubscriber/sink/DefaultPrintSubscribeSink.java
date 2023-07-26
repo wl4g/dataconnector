@@ -31,7 +31,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 @Slf4j
 public class DefaultPrintSubscribeSink implements ISubscribeSink {
 
-    public static final String BEAN_NAME = "defaultPrintSubscribeSink";
+    public static final String BEAN_NAME = "defaultSubscribeSink";
 
     @Override
     public SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,

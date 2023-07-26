@@ -28,7 +28,6 @@ import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.producer.Producer;
 import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -57,31 +56,29 @@ public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
     protected final ApplicationContext context;
-    protected final KafkaSubscriberProperties.SubscribePipelineProperties pipelineConfig;
-    protected final KafkaSubscriberProperties.GenericProcessProperties processConfig;
+    protected final KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig;
+    protected final String topicDesc;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
     protected final ThreadPoolExecutor sharedNonSequenceExecutor;
     protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
     protected final String groupId;
-    protected final Producer<String, String> acknowledgeProducer;
 
     public AbstractBatchMessageDispatcher(ApplicationContext context,
-                                          KafkaSubscriberProperties.SubscribePipelineProperties config,
-                                          KafkaSubscriberProperties.GenericProcessProperties processConfig,
+                                          KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
                                           String groupId,
-                                          Producer<String, String> acknowledgeProducer) {
+                                          String topicDesc) {
         this.context = Assert2.notNullOf(context, "context");
-        this.pipelineConfig = Assert2.notNullOf(config, "config");
-        this.processConfig = Assert2.notNullOf(processConfig, "processConfig");
+        this.pipelineConfig = Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = Assert2.notNullOf(registry, "registry");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
-        this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
+        this.topicDesc = Assert2.notNullOf(topicDesc, "topicDesc");
 
         // Create the shared filter single executor.
+        final KafkaSubscriberProperties.GenericProcessProperties processConfig = pipelineConfig.getInternalFilter().getProcessProps();
         this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
                 processConfig.getSharedExecutorThreadPoolSize(),
                 0L, TimeUnit.MILLISECONDS,
@@ -133,18 +130,16 @@ public abstract class AbstractBatchMessageDispatcher
     @Override
     public void onMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
         try {
-            addCounterMetrics(SubscribeMeter.MetricsName.shared_consumed,
-                    pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+            addCounterMetrics(SubscribeMeter.MetricsName.shared_consumed, topicDesc, groupId);
 
             final Timer timer = addTimerMetrics(SubscribeMeter.MetricsName.shared_consumed_time,
-                    pipelineConfig.getSource().getTopicPattern().toString(), groupId);
+                    topicDesc, groupId);
 
             timer.record(() -> doOnMessage(records, ack));
-
         } catch (Throwable ex) {
             log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
-            if (pipelineConfig.getFilter().getCheckpoint().getQos().isMoseOnce()) {
+            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
         }
@@ -169,9 +164,10 @@ public abstract class AbstractBatchMessageDispatcher
      * Max retries then give up if it fails.
      */
     protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
-        return pipelineConfig.getFilter().getCheckpoint().getQos().isMoseOnceOrAnyRetriesAtMost()
-                && (retryTimes > pipelineConfig.getFilter().getCheckpoint().getQoSMaxRetries()
-                || (System.nanoTime() - retryBegin) > pipelineConfig.getFilter().getCheckpoint().getQoSMaxRetriesTimeout().toNanos());
+        final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipelineConfig.getInternalFilter().getCheckpoint();
+        return checkpoint.getQos().isMoseOnceOrAnyRetriesAtMost()
+                && (retryTimes > checkpoint.getQoSMaxRetries()
+                || (System.nanoTime() - retryBegin) > checkpoint.getQoSMaxRetriesTimeout().toNanos());
     }
 
     protected void addCounterMetrics(SubscribeMeter.MetricsName metrics, String topic, String groupId) {

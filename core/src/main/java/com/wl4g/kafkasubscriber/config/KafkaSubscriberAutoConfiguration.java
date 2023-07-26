@@ -59,7 +59,7 @@ public class KafkaSubscriberAutoConfiguration {
         return new SubscribeEngineCustomizer() {
             @Override
             public List<SubscriberInfo> loadSubscribers(SubscriberInfo query) {
-                return config.getSubscribers();
+                return config.getDefinitions().getSubscribers();
             }
         };
     }

@@ -23,8 +23,6 @@ import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.config.TopicConfig;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.util.unit.DataSize;
@@ -42,6 +40,9 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
+import static org.apache.kafka.clients.producer.ProducerConfig.BOOTSTRAP_SERVERS_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.RETENTION_BYTES_CONFIG;
+import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 
 /**
  * The {@link CheckpointTopicManager}
@@ -63,22 +64,22 @@ public class CheckpointTopicManager implements ApplicationRunner {
     public void addTopicAllIfNecessary() {
         log.info("Creating topics if necessary of {} ...", config.getPipelines().size());
         config.getPipelines().forEach(pipeline -> {
-            final String brokerServers = pipeline.getFilter().getCheckpoint().getDefaultProducerProps()
-                    .getProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG);
-            try (AdminClient adminClient = AdminClient.create(singletonMap(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-                    brokerServers));) {
-                final String topicPrefix = pipeline.getFilter().getTopicPrefix();
-                final int partitions = pipeline.getFilter().getTopicPartitions();
-                final short replicationFactor = pipeline.getFilter().getReplicationFactor();
+            final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipeline.getInternalFilter().getCheckpoint();
+            final String brokerServers = checkpoint.getDefaultProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
+            try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG,
+                    brokerServers))) {
+                final String topicPrefix = pipeline.getInternalFilter().getTopicPrefix();
+                final int partitions = pipeline.getInternalFilter().getTopicPartitions();
+                final short replicationFactor = pipeline.getInternalFilter().getReplicationFactor();
 
                 final List<NewTopic> topics = safeList(registry.getAll()).stream()
                         .map(subscriber -> String.format("%s-%s", topicPrefix, subscriber.getId()))
                         .map(topic -> {
-                            final Map<String, String> topicConfigs = pipeline.getFilter().getCheckpoint().getDefaultTopicProps()
+                            final Map<String, String> topicConfigs = checkpoint.getDefaultTopicProps()
                                     .entrySet().stream().collect(toMap(e -> (String) e.getKey(), e -> (String) e.getValue()));
 
-                            topicConfigs.put(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1)));
-                            topicConfigs.put(TopicConfig.RETENTION_BYTES_CONFIG, String.valueOf(DataSize.ofGigabytes(1).toBytes()));
+                            topicConfigs.put(RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1).toMillis()));
+                            topicConfigs.put(RETENTION_BYTES_CONFIG, String.valueOf(DataSize.ofGigabytes(1).toBytes()));
                             return new NewTopic(topic, partitions, replicationFactor).configs(topicConfigs);
                         })
                         .collect(toList());
