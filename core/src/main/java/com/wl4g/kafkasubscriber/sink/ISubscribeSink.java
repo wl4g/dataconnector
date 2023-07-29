@@ -18,7 +18,7 @@ package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkSubscriberBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
@@ -28,8 +28,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @since v1.0
  **/
 public interface ISubscribeSink {
-    SinkSubscriberBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                                              long subscriberId,
-                                                              boolean sequence,
-                                                              ConsumerRecord<String, ObjectNode> record);
+    SinkBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
+                                                    String subscriberId,
+                                                    boolean sequence,
+                                                    ConsumerRecord<String, ObjectNode> record);
 }

@@ -78,7 +78,7 @@ kafka-subscriber:
         matchToSubscriberUpdateDelayTime: 3s
         consumerProps:
           bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "shared_source_101"
+          group.id: "test_shared_source_101"
           <<: *baseConsumerProps
       - name: kafka02
         topicPattern: "test-input"
@@ -90,22 +90,18 @@ kafka-subscriber:
           <<: *baseConsumerProps
     filters:
       - name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
-        topicPrefix: "shared_filtered_"
+        topicPrefix: "test_shared_filtered_"
         topicPartitions: 10
         replicationFactor: 1
         processProps:
           <<: *baseProcessProps
         checkpoint:
-          qoS: 2 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
+          qoS: 3 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
           qoSMaxRetries: 5
           qoSMaxRetriesTimeout: 6h
           producerMaxCountLimit: 100
-          defaultTopicProps:
-            cleanup.policy: "delete"
-            retention.ms: 86400000 # By default: 1day
-            retention.bytes: 1073741824 # By default: 1G
-          defaultProducerProps:
-            bootstrap.servers: "localhost:9092"
+          producerProps:
+            #bootstrap.servers: "localhost:9092" # By default: {.source.bootstrapServers}
             acks: "0"
             request.timeout.ms: 30000
             max.request.size: 1048576
@@ -113,19 +109,24 @@ kafka-subscriber:
             retries: 5
             retry.backoff.ms: 6000
             compression.type: gzip
+          defaultTopicProps:
+            cleanup.policy: "delete"
+            retention.ms: 86400000 # By default: 1day
+            retention.bytes: 1073741824 # By default: 1G
     sinks:
       - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
-        groupIdPrefix: "isolation_sink_"
+        groupIdPrefix: "test_isolation_sink_"
         parallelism: 2
         processProps:
           <<: *baseProcessProps
 
   pipelines:
     - name: defaultPipeline
+      enable: true # By default: true
       # Required (default: [])
       sources:
         - kafka01
-        - kafka02
+        #- kafka02
       # Required (default: defaultSubscribeFilter)
       filter: defaultSubscribeFilter
       # Optional (default: defaultSubscribeSink)

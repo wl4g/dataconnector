@@ -43,8 +43,7 @@ import java.util.stream.Collectors;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.stream.Collectors.toList;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.kafka.clients.consumer.ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG;
-import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG;
+import static org.apache.kafka.clients.consumer.ConsumerConfig.*;
 
 /**
  * The {@link KafkaSubscriberProperties}
@@ -108,26 +107,36 @@ public class KafkaSubscriberProperties implements InitializingBean {
     private void optimizeProperties() {
         definitions.getSources().forEach(source -> {
             // The filter message handler is internally hardcoded to use JsonNode.
-            source.getConsumerProps().put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
+            final String oldKeyDeserializer = source.getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG);
+            source.getConsumerProps().put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", KEY_DESERIALIZER_CLASS_CONFIG,
+                    source.getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG), oldKeyDeserializer, source.getGroupId());
+
+            final String oldValueDeserializer = source.getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG);
+            source.getConsumerProps().put(VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", VALUE_DESERIALIZER_CLASS_CONFIG,
+                    source.getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG), oldValueDeserializer, source.getGroupId());
+
+            // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
+            final String oldAutoCreateTopics = source.getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG);
+            source.getConsumerProps().put(ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", ALLOW_AUTO_CREATE_TOPICS_CONFIG,
+                    source.getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG), oldAutoCreateTopics, source.getGroupId());
+
+            // Mandatory manual commit.
+            final String oldEnableAutoCommit = source.getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG);
+            source.getConsumerProps().put(ENABLE_AUTO_COMMIT_CONFIG, "false");
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", ENABLE_AUTO_COMMIT_CONFIG,
+                    source.getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG), oldEnableAutoCommit, source.getGroupId());
 
             // TODO checking by merge to sources and filter with pipeline
             // Should be 'max.poll.records' equals to filter executor queue size.
-//            final Object originalMaxPollRecords = source.getConsumerProps().get(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
+//            final Object originalMaxPollRecords = source.getConsumerProps().get(MAX_POLL_RECORDS_CONFIG);
 //            source.getConsumerProps().put(MAX_POLL_RECORDS_CONFIG,
 //                    String.valueOf(source.getFilter().getProcessProps().getSharedExecutorQueueSize()));
 //            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
 //                    MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, source.getFilter().getProcessProps()
 //                            .getSharedExecutorQueueSize(), source.getGroupId());
-
-            // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
-            source.getConsumerProps().put(ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ALLOW_AUTO_CREATE_TOPICS_CONFIG,
-                    source.getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG), "true", source.getGroupId());
-
-            // Mandatory manual commit.
-            source.getConsumerProps().put(ENABLE_AUTO_COMMIT_CONFIG, "false");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ENABLE_AUTO_COMMIT_CONFIG,
-                    source.getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG), "false", source.getGroupId());
         });
     }
 
@@ -166,6 +175,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @NoArgsConstructor
     public static class EnginePipelineProperties {
         private String name;
+        private @Builder.Default boolean enable = true;
         private @Builder.Default List<String> sources = new ArrayList<>(1);
         private @Builder.Default String filter = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
         private @Builder.Default String sink = DefaultPrintSubscribeSink.BEAN_NAME;
@@ -321,6 +331,20 @@ public class KafkaSubscriberProperties implements InitializingBean {
         private @Builder.Default int qoSMaxRetries = 5;
         private @Builder.Default Duration qoSMaxRetriesTimeout = Duration.ofHours(6);
         private @Builder.Default int producerMaxCountLimit = 10;
+        private @Builder.Default Properties producerProps = new Properties() {
+            {
+                setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+                setProperty(ProducerConfig.ACKS_CONFIG, "0");
+                setProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+                setProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "1048576");
+                setProperty(ProducerConfig.SEND_BUFFER_CONFIG, "131072");
+                setProperty(ProducerConfig.RETRIES_CONFIG, "5");
+                setProperty(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "6000");
+                setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip"); // snappy|gzip|lz4|zstd|none
+                setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+                setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            }
+        };
         private @Builder.Default Properties defaultTopicProps = new Properties() {
             {
                 setProperty(TopicConfig.CLEANUP_POLICY_CONFIG, "delete");
@@ -339,40 +363,26 @@ public class KafkaSubscriberProperties implements InitializingBean {
                 //setProperty(TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG, "false");
             }
         };
-        private @Builder.Default Properties defaultProducerProps = new Properties() {
-            {
-                setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-                setProperty(ProducerConfig.ACKS_CONFIG, "0");
-                setProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-                setProperty(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, "1048576");
-                setProperty(ProducerConfig.SEND_BUFFER_CONFIG, "131072");
-                setProperty(ProducerConfig.RETRIES_CONFIG, "5");
-                setProperty(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "6000");
-                setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip"); // snappy|gzip|lz4|zstd|none
-                setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-                setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-            }
-        };
 
         public void validate() {
             Assert2.notNullOf(qos, "qos");
             Assert2.isTrueOf(qoSMaxRetries > 0, "qosMaxRetries > 0");
             Assert2.isTrueOf(producerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
             Assert2.isTrueOf(qoSMaxRetriesTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
+            // check for producer props.
+            Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), "max.request.size");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.SEND_BUFFER_CONFIG), "send.buffer.bytes");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.RETRIES_CONFIG), "retries");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.RETRY_BACKOFF_MS_CONFIG), "retry.backoff.ms");
+            Assert2.notNullOf(producerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG), "compression.type");
             // check for topic props.
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.CLEANUP_POLICY_CONFIG), "cleanup.policy");
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_MS_CONFIG), "retention.ms");
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_BYTES_CONFIG), "retention.bytes");
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.DELETE_RETENTION_MS_CONFIG), "delete.retention.ms");
-            // check for producer props.
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), "max.request.size");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.SEND_BUFFER_CONFIG), "send.buffer.bytes");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.RETRIES_CONFIG), "retries");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.RETRY_BACKOFF_MS_CONFIG), "retry.backoff.ms");
-            Assert2.notNullOf(defaultProducerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG), "compression.type");
         }
     }
 

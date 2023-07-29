@@ -20,6 +20,7 @@ package com.wl4g.kafkasubscriber.dispatch;
 import com.wl4g.infra.common.lang.TypeConverts;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
+import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
@@ -54,6 +55,7 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 @AllArgsConstructor
 public class CheckpointTopicManager implements ApplicationRunner {
     private final KafkaSubscriberProperties config;
+    private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
 
     @Override
@@ -65,15 +67,15 @@ public class CheckpointTopicManager implements ApplicationRunner {
         log.info("Creating topics if necessary of {} ...", config.getPipelines().size());
         config.getPipelines().forEach(pipeline -> {
             final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipeline.getInternalFilter().getCheckpoint();
-            final String brokerServers = checkpoint.getDefaultProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
+            final String brokerServers = checkpoint.getProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
             try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG,
                     brokerServers))) {
                 final String topicPrefix = pipeline.getInternalFilter().getTopicPrefix();
                 final int partitions = pipeline.getInternalFilter().getTopicPartitions();
                 final short replicationFactor = pipeline.getInternalFilter().getReplicationFactor();
 
-                final List<NewTopic> topics = safeList(registry.getAll()).stream()
-                        .map(subscriber -> String.format("%s-%s", topicPrefix, subscriber.getId()))
+                final List<NewTopic> topics = safeList(registry.getShardingAll()).stream()
+                        .map(subscriber -> customizer.generateCheckpointTopic(topicPrefix, subscriber.getId()))
                         .map(topic -> {
                             final Map<String, String> topicConfigs = checkpoint.getDefaultTopicProps()
                                     .entrySet().stream().collect(toMap(e -> (String) e.getKey(), e -> (String) e.getValue()));

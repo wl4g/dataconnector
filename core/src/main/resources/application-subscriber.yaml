@@ -68,12 +68,8 @@ kafka-subscriber:
           qoSMaxRetries: 5
           qoSMaxRetriesTimeout: 6h
           producerMaxCountLimit: 100
-          defaultTopicProps:
-            cleanup.policy: "delete"
-            retention.ms: 86400000 # By default: 1day
-            retention.bytes: 1073741824 # By default: 1G
-          defaultProducerProps:
-            bootstrap.servers: "localhost:9092"
+          producerProps:
+            #bootstrap.servers: "localhost:9092" # By default: {.source.bootstrapServers}
             acks: "0"
             request.timeout.ms: 30000
             max.request.size: 1048576
@@ -81,6 +77,10 @@ kafka-subscriber:
             retries: 5
             retry.backoff.ms: 6000
             compression.type: gzip
+          defaultTopicProps:
+            cleanup.policy: "delete"
+            retention.ms: 86400000 # By default: 1day
+            retention.bytes: 1073741824 # By default: 1G
     sinks:
       - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
         groupIdPrefix: "isolation_sink_"
@@ -90,6 +90,7 @@ kafka-subscriber:
 
   pipelines:
     - name: defaultPipeline
+      enable: true # By default: true
       # Required (default: [])
       sources:
         - kafka01

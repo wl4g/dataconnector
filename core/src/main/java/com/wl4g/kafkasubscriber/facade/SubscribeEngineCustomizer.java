@@ -17,14 +17,23 @@
 package com.wl4g.kafkasubscriber.facade;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Header;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+
+import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.KEY_SUBSCRIBER_ID;
 
 /**
  * The {@link SubscribeEngineCustomizer}
@@ -38,24 +47,32 @@ public interface SubscribeEngineCustomizer {
 
     List<SubscriberInfo> loadSubscribers(@Null SubscriberInfo query);
 
-    default boolean matchSubscriberRecord(@Null SubscriberInfo subscriber,
-                                          @Null ConsumerRecord<String, ObjectNode> record) {
+    default boolean matchSubscriberRecord(@NotNull SubscriberInfo subscriber,
+                                          @NotNull ConsumerRecord<String, ObjectNode> record) {
+        Assert2.notNullOf(subscriber, "subscriber");
+        Assert2.notNullOf(record, "record");
         // Notice: By default, the $subscriberId field of the source message match, which should be customized
         // to match the subscriber relationship corresponding to each record in the source consume topic.
-        if (Objects.nonNull(subscriber) && Objects.nonNull(record.value())) {
-            return record.value().at("/$subscriberId").asLong(-1L) == subscriber.getId();
+        if (Objects.nonNull(record.value())) {
+            // Priority match with message header.
+            final Iterator<Header> it = record.headers().headers("$$subscriber").iterator();
+            if (it.hasNext()) {
+                // match first only
+                final String first = KafkaUtil.getFirstValueAsString(record.headers(),
+                        FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID);
+                return StringUtils.equals(first, subscriber.getId());
+            }
+            // Fallback match with message value.
+            return StringUtils.equals(record.value().remove(KEY_SUBSCRIBER_ID)
+                    .asText(""), subscriber.getId());
         }
         return false;
     }
 
-    default String generateCheckpointTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
-                                           @Null SubscriberInfo subscriber) {
-        return generateCheckpointTopic(filterConfig, subscriber.getId());
-    }
-
-    default String generateCheckpointTopic(@Null KafkaSubscriberProperties.FilterProperties filterConfig,
-                                           @Null Long subscriberId) {
-        String topicPrefix = filterConfig.getTopicPrefix();
+    default String generateCheckpointTopic(@NotBlank String topicPrefix,
+                                           @NotBlank String subscriberId) {
+        Assert2.hasTextOf(topicPrefix, "topicPrefix");
+        Assert2.hasTextOf(subscriberId, "subscriberId");
         if (!StringUtils.endsWithAny(topicPrefix, "-", "_")) {
             topicPrefix += "_";
         }
@@ -63,7 +80,7 @@ public interface SubscribeEngineCustomizer {
     }
 
     default String generateSinkGroupId(@Null KafkaSubscriberProperties.SinkProperties sinkConfig,
-                                       @Null Long subscriberId) {
+                                       @Null String subscriberId) {
         String groupIdPrefix = sinkConfig.getGroupIdPrefix();
         if (!StringUtils.endsWithAny(groupIdPrefix, "-", "_")) {
             groupIdPrefix += "_";

@@ -36,39 +36,39 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CachingSubscriberRegistry {
 
     private final @Getter KafkaSubscriberProperties config;
-    private final @Getter SubscribeEngineCustomizer facade;
-    private final Map<Long, SubscriberInfo> registry;
+    private final @Getter SubscribeEngineCustomizer customizer;
+    private final Map<String, SubscriberInfo> registry;
 
     public CachingSubscriberRegistry(KafkaSubscriberProperties config,
-                                     SubscribeEngineCustomizer facade) {
+                                     SubscribeEngineCustomizer customizer) {
         this.config = Assert2.notNullOf(config, "config");
-        this.facade = Assert2.notNullOf(facade, "facade");
+        this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = new ConcurrentHashMap<>(16);
     }
 
-    public SubscriberInfo get(Long id) {
+    public SubscriberInfo get(String id) {
         return registry.get(id);
     }
 
-    public Collection<SubscriberInfo> getAll() {
+    public Collection<SubscriberInfo> getShardingAll() {
         // TODO
 //        return registry.values();
-        return facade.loadSubscribers(new SubscriberInfo());
+        return customizer.loadSubscribers(new SubscriberInfo());
     }
 
-    public void put(Long id, SubscriberInfo subscriber) {
+    public void put(String id, SubscriberInfo subscriber) {
         registry.put(id, subscriber);
     }
 
-    public void putAll(Map<Long, SubscriberInfo> subscribers) {
+    public void putAll(Map<String, SubscriberInfo> subscribers) {
         registry.putAll(subscribers);
     }
 
-    public void putAllIfAbsent(Map<Long, SubscriberInfo> subscribers) {
+    public void putAllIfAbsent(Map<String, SubscriberInfo> subscribers) {
         subscribers.forEach(registry::putIfAbsent);
     }
 
-    public void remove(Long id) {
+    public void remove(String id) {
         registry.remove(id);
     }
 

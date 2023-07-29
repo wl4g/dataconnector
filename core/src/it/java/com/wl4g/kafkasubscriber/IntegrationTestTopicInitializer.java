@@ -18,6 +18,7 @@
 package com.wl4g.kafkasubscriber;
 
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
+import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import lombok.Getter;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -127,8 +128,9 @@ public class IntegrationTestTopicInitializer {
                     int j = 0;
                     while (++j <= recordsPerExecutor) {
                         String key = String.format("test-key-%s-%s", _i, counter.incrementAndGet());
-                        String value = String.format("{\"cts\":%s,\"__properties__\":{\"__online__\":{\"connected\":true,\"directlyLinked\":true,\"seq\":\"%s-%s\"}},\"$subscriberId\":54321}",
-                                System.currentTimeMillis(), _i, counter.get());
+                        String value = String.format("{\"cts\":%s,\"__properties__\":{\"__online__\":{\"connected\":true," +
+                                        "\"directlyLinked\":true,\"seq\":\"%s-%s\"}},\"%s\":\"1001\"}",
+                                System.currentTimeMillis(), _i, counter.get(), FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID);
                         System.out.printf("Send to topic: %s, key: %s, value: %s%n", testInputTopic, key, value);
                         Future<RecordMetadata> future = producer.send(new ProducerRecord<>("test-input", key, value));
                         //System.out.println(future.get());

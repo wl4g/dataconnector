@@ -20,7 +20,7 @@ import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
 import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
-import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineBootstrap;
+import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
@@ -65,16 +65,16 @@ public class KafkaSubscriberAutoConfiguration {
     }
 
     @Bean
-    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscriberProperties config, SubscribeEngineBootstrap engine) {
+    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscriberProperties config, SubscribeEngineManager engine) {
         return new SubscribeEngineFacade(config, engine);
     }
 
     @Bean
-    public SubscribeEngineBootstrap kafkaSubscribeManager(ApplicationContext context,
-                                                          KafkaSubscriberProperties config,
-                                                          SubscribeEngineCustomizer facade,
-                                                          CachingSubscriberRegistry registry) {
-        return new SubscribeEngineBootstrap(context, config, facade, registry);
+    public SubscribeEngineManager kafkaSubscribeManager(ApplicationContext context,
+                                                        KafkaSubscriberProperties config,
+                                                        SubscribeEngineCustomizer facade,
+                                                        CachingSubscriberRegistry registry) {
+        return new SubscribeEngineManager(context, config, facade, registry);
     }
 
     @Bean
@@ -112,8 +112,9 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean
     public CheckpointTopicManager filteredTopicManager(KafkaSubscriberProperties config,
+                                                       SubscribeEngineCustomizer customizer,
                                                        CachingSubscriberRegistry registry) {
-        return new CheckpointTopicManager(config, registry);
+        return new CheckpointTopicManager(config, customizer, registry);
     }
 
 }

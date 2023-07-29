@@ -36,7 +36,7 @@ import java.util.Properties;
 @ToString(callSuper = true)
 @NoArgsConstructor
 public class SubscriberInfo {
-    private Long id;
+    private String id;
     private String name;
     private String tenantId;
     private Boolean enable;

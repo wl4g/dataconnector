@@ -16,8 +16,9 @@
 
 package com.wl4g.kafkasubscriber.facade;
 
+import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineBootstrap;
+import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * The {@link SubscribeEngineFacade}
@@ -37,14 +40,38 @@ import javax.validation.constraints.Null;
 @AllArgsConstructor
 public class SubscribeEngineFacade {
     private final KafkaSubscriberProperties config;
-    private final SubscribeEngineBootstrap engine;
+    private final SubscribeEngineManager engineManager;
 
-    public @Null Boolean stopFilter(@NotBlank String sharedConsumerGroupId, long shutdownTimeout) throws InterruptedException {
-        return engine.stopFilter(sharedConsumerGroupId, shutdownTimeout);
+    public @NotNull Map<String, Boolean> startFilters(@NotBlank String pipelineName,
+                                                      String... sourceNames) {
+        return getRequiredPipeline(pipelineName).startFilters(sourceNames);
     }
 
-    public @Null Boolean stopSinker(@NotNull Long subscriberId, long shutdownTimeout) throws InterruptedException {
-        return engine.stopSinker(subscriberId, shutdownTimeout);
+    public @NotNull Map<String, Boolean> startSinks(@NotBlank String pipelineName,
+                                                    String... pipelineNames) {
+        return getRequiredPipeline(pipelineName).startSinks(pipelineNames);
+    }
+
+    public @NotNull Map<String, Boolean> stopFilters(@NotBlank String pipelineName,
+                                                     long perFilterTimeout,
+                                                     @Null String... sourceNames) {
+        return getRequiredPipeline(pipelineName).stopFilters(perFilterTimeout, sourceNames);
+    }
+
+    public @NotNull Map<String, Boolean> stopSinks(@NotBlank String pipelineName,
+                                                   long perSinkTimeout,
+                                                   @Null String... subscriberIds) {
+        return getRequiredPipeline(pipelineName).stopSinks(perSinkTimeout, subscriberIds);
+    }
+
+    private SubscribeEngineManager.SubscribePipelineBootstrap getRequiredPipeline(@NotBlank String pipelineName) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
+        final SubscribeEngineManager.SubscribePipelineBootstrap pipeline = engineManager
+                .getPipelineRegistry().get(pipelineName);
+        if (Objects.isNull(pipeline)) {
+            throw new IllegalStateException(String.format("Not found pipeline %s for stop.", pipelineName));
+        }
+        return pipeline;
     }
 
 }
