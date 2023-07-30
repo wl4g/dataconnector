@@ -12,7 +12,6 @@ version: "3"
 
 networks:
   subscriber_net:
-    name: subscriber_net
     driver: bridge
 
 services:
@@ -76,7 +75,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - 8080:8080
+      - 38080:8080
 
 #  kafka-subscriber:
 #    image: docker.io/wl4g/kafka-subscriber:1.0.0
@@ -96,8 +95,6 @@ services:
 
 volumes:
   zookeeper_data:
-    name: subscriber_zookeeper_data
     driver: local
   kafka_data:
-    name: subscriber_kafka_data
     driver: local

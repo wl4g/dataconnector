@@ -46,6 +46,7 @@ public class SubscriberInfo {
         Assert2.notNullOf(id, "id");
         Assert2.hasTextOf(name, "name");
         Assert2.notNullOf(enable, "enable");
+        Assert2.notNullOf(settings, "settings");
         this.settings.validate();
     }
 

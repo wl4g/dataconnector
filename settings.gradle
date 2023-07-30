@@ -1,0 +1,9 @@
+rootProject.name = 'kafka-subscriber'
+
+include 'core'
+include 'server'
+include 'sharding-elasticjob'
+
+project(':core').projectDir = new File(rootDir, 'core')
+project(':server').projectDir = new File(rootDir, 'server')
+project(':sharding-elasticjob').projectDir = new File(rootDir, 'sharding-elasticjob')

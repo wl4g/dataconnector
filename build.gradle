@@ -1,0 +1,87 @@
+plugins {
+    id 'java'
+    //id 'org.springframework.boot' version '3.1.1'
+    //id 'io.spring.dependency-management' version '1.1.0'
+    id 'org.springframework.boot' version '2.7.13'
+    id 'io.spring.dependency-management' version '1.0.15.RELEASE'
+}
+
+group = 'com.wl4g'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = '1.8'
+}
+
+allprojects {
+    //sourceCompatibility = '17'
+    //targetCompatibility = '17'
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/public/' }
+        maven { url 'https://packages.confluent.io/maven' }
+        mavenLocal()
+        mavenCentral()
+        //maven {
+        //    url "${nexusUrl}/repository/maven-releases/"
+        //    credentials {
+        //        username nexusUsername
+        //        password nexusPassword
+        //    }
+        //    authentication {
+        //        basic(BasicAuthentication)
+        //    }
+        //}
+        //maven {
+        //    url "${nexusUrl}/repository/maven-snapshots/"
+        //    credentials {
+        //        username nexusUsername
+        //        password nexusPassword
+        //    }
+        //    authentication {
+        //        basic(BasicAuthentication)
+        //    }
+        //}
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: "checkstyle"
+    //apply plugin: 'com.github.dawnwords.jacoco.badge'
+
+    //group = packageJson.group
+    //version = packageJson.version
+    //sourceCompatibility = '17'
+
+    checkstyle {
+        toolVersion = "8.26"
+        configFile file("${rootProject.rootDir}/tools/build/checkstyle/checkstyle.xml")
+        maxWarnings = 0
+    }
+
+    dependencyManagement {
+        imports {
+            //mavenBom 'org.springframework.boot:spring-boot-dependencies:3.1.1'
+            mavenBom 'org.springframework.boot:spring-boot-dependencies:2.7.13'
+        }
+    }
+
+    dependencies {
+        //implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:3.1.1')
+        implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:2.7.13')
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+bootJar {
+    mainClass = 'com.wl4g.KafkaSubscriberApplication'
+}
