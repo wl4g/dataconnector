@@ -54,7 +54,6 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
-import static java.lang.System.getenv;
 import static java.util.Collections.synchronizedList;
 import static java.util.stream.Collectors.toList;
 import static org.apache.kafka.clients.producer.ProducerConfig.*;

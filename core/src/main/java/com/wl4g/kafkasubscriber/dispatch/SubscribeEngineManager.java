@@ -113,6 +113,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                 log.info("Disabled to register subscribe pipeline: {}", pipeline.getName());
                 return;
             }
+            log.info("Registering to pipeline {} => {} ...", pipeline.getName(), pipeline);
 
             // Build filter dispatchers.
             final Map<String, SubscribeContainerBootstrap<FilterBatchMessageDispatcher>> filterBootstraps =

@@ -40,15 +40,14 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.time.Duration;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -89,6 +88,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
 
         // Wait for all sink to be completed.
         if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+            final Set<SinkResult> completedSinkResults = new HashSet<>(sinkResults.size());
             while (sinkResults.size() > 0) {
                 final Iterator<SinkResult> it = sinkResults.iterator();
                 while (it.hasNext()) {
@@ -98,6 +98,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                         SinkCompleted sc = null;
                         try {
                             sc = sr.getFuture().get();
+                            completedSinkResults.add(sr);
 
                             addCounterMetrics(SubscribeMeter.MetricsName.sink_records_success,
                                     sr.getRecord().topic(), sr.getRecord().partition(), groupId, null);
@@ -144,28 +145,37 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                 log.debug("{} :: {} :: Batch sink acknowledging ...", groupId, subscriber.getId());
                 ack.acknowledge();
                 log.info("{} :: {} :: Sink to acknowledged.", groupId, subscriber.getId());
+
+                addAcknowledgeCounterMetrics(MetricsName.acknowledge_success, completedSinkResults);
             } catch (Throwable ex) {
                 log.error(String.format("%s :: %s :: Failed to sink success acknowledge for %s", groupId, subscriber.getId(), ack), ex);
+
+                addAcknowledgeCounterMetrics(MetricsName.acknowledge_failure, completedSinkResults);
             }
         } else {
             try {
                 log.debug("{} :: {} :: Batch regardless of success or failure sink force acknowledging ...", groupId, subscriber.getId());
                 ack.acknowledge();
                 log.info("{} :: {} :: Force sink to acknowledged.", groupId, subscriber.getId());
+
+                addAcknowledgeCounterMetrics(MetricsName.acknowledge_success, sinkResults);
             } catch (Throwable ex) {
                 log.error(String.format("%s :: %s :: Failed to sink force acknowledge for %s", groupId, subscriber.getId(), ack), ex);
+
+                addAcknowledgeCounterMetrics(MetricsName.acknowledge_failure, sinkResults);
             }
         }
 
         sinkTimer.record(Duration.ofNanos(System.nanoTime() - sinkBeginTime));
     }
 
-    private void addAcknowledgeCounterMetrics(Set<SinkResult> sinkResults) {
+    private void addAcknowledgeCounterMetrics(MetricsName metrics,
+                                              Collection<SinkResult> sinkResults) {
         sinkResults.stream()
                 .map(sr -> new TopicPartition(sr.getRecord().topic(),
                         sr.getRecord().partition()))
-                .distinct().forEach(tp -> addCounterMetrics(SubscribeMeter.MetricsName.acknowledge_success,
-                        tp.topic(), tp.partition(), groupId, null));
+                .distinct().forEach(tp -> addCounterMetrics(metrics,
+                        tp.topic(), tp.partition(), groupId, subscriber.getId()));
     }
 
     private ThreadPoolExecutor determineSinkExecutor(String key) {

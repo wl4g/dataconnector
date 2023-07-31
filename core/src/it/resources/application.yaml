@@ -119,6 +119,10 @@ kafka-subscriber:
         parallelism: 2
         processProps:
           <<: *baseProcessProps
+        consumerProps:
+          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+          group.id: "test_shared_source_101"
+          <<: *baseConsumerProps
 
   pipelines:
     - name: defaultPipeline

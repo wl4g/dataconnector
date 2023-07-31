@@ -5,8 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5e07ed15-2bb7-4be0-904f-2a9624390cff" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/gradle.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/gradle.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -94,21 +92,22 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;ToolWindowBuild.ShowToolbar&quot;: &quot;false&quot;,
-    &quot;deletionFromPopupRequiresConfirmation&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.159375&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.20837696&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.keymap&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ToolWindowBuild.ShowToolbar": "false",
+    "deletionFromPopupRequiresConfirmation": "false",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker",
+    "project.structure.last.edited": "Modules",
+    "project.structure.proportion": "0.159375",
+    "project.structure.side.proportion": "0.20837696",
+    "settings.editor.selected.configurable": "preferences.keymap"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker" />
@@ -116,39 +115,11 @@
     </key>
   </component>
   <component name="RunManager" selected="Application.KafkaSubscriberApplicationIT_with_rcdev">
-    <configuration name="kafka-subscriber::mnt:disk1:__wanglsir_Documents:java-workspace:wl4g-projects:kafka-subscriber:core [clean]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
-      <ExternalSystemSettings>
-        <option name="executionName" />
-        <option name="externalProjectPath" value="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/core" />
-        <option name="externalSystemIdString" value="GRADLE" />
-        <option name="scriptParameters" />
-        <option name="taskDescriptions">
-          <list />
-        </option>
-        <option name="taskNames">
-          <list>
-            <option value="clean" />
-          </list>
-        </option>
-        <option name="vmOptions" />
-      </ExternalSystemSettings>
-      <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
-      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
-      <DebugAllEnabled>false</DebugAllEnabled>
-      <ForceTestExec>false</ForceTestExec>
-      <method v="2" />
-    </configuration>
     <list>
       <item itemvalue="Application.KafkaSubscriberApplication" />
       <item itemvalue="Application.KafkaSubscriberApplicationIT_with_local" />
       <item itemvalue="Application.KafkaSubscriberApplicationIT_with_rcdev" />
-      <item itemvalue="Gradle.kafka-subscriber::mnt:disk1:__wanglsir_Documents:java-workspace:wl4g-projects:kafka-subscriber:core [clean]" />
     </list>
-    <recent_temporary>
-      <list>
-        <item itemvalue="Gradle.kafka-subscriber::mnt:disk1:__wanglsir_Documents:java-workspace:wl4g-projects:kafka-subscriber:core [clean]" />
-      </list>
-    </recent_temporary>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
@@ -160,6 +131,9 @@
       <updated>1690296598223</updated>
     </task>
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
   </component>
   <component name="XDebuggerManager">
     <pin-to-top-manager>

@@ -72,6 +72,7 @@ public class CheckpointTopicManager implements ApplicationRunner {
             final String brokerServers = checkpoint.getProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
             try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG,
                     brokerServers))) {
+                adminClient.describeConsumerGroups(null).all().get().values().iterator().next().members().iterator().next().consumerId();
                 doCreateOrUpdateTopicsIfNecessary(adminClient, pipeline, customizer, registry.getShardingAll(), 6000);
             } catch (Throwable ex) {
                 log.error(String.format("Failed to create topics of %s", config.getPipelines().size()), ex);

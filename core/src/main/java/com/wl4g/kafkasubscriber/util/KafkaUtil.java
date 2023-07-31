@@ -17,11 +17,16 @@
 
 package com.wl4g.kafkasubscriber.util;
 
+import com.wl4g.infra.common.lang.Assert2;
+import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
-import java.util.Iterator;
-import java.util.Objects;
+import javax.validation.constraints.NotBlank;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * The {@link KafkaUtil}
@@ -50,6 +55,35 @@ public abstract class KafkaUtil {
             }
         }
         return null;
+    }
+
+    public static Collection<MemberDescription> getGroupConsumers(@NotBlank String bootstrapServers,
+                                                                  @NotBlank String groupId,
+                                                                  long timeout) throws ExecutionException, InterruptedException, TimeoutException {
+        Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
+        Assert2.hasTextOf(groupId, "groupId");
+
+        Properties properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+
+        try (AdminClient adminClient = AdminClient.create(properties)) {
+            DescribeConsumerGroupsOptions describeOptions = new DescribeConsumerGroupsOptions()
+                    .includeAuthorizedOperations(false);
+
+            DescribeConsumerGroupsResult describeResult = adminClient.describeConsumerGroups(
+                    Collections.singletonList(groupId), describeOptions);
+
+            Map<String, ConsumerGroupDescription> consumerGroupDescriptionMap =
+                    describeResult.all().get(timeout, TimeUnit.MILLISECONDS);
+
+            if (consumerGroupDescriptionMap.containsKey(groupId)) {
+                ConsumerGroupDescription consumerGroupDescription =
+                        consumerGroupDescriptionMap.get(groupId);
+                return consumerGroupDescription.members();
+            }
+        }
+
+        return Collections.emptyList();
     }
 
 }
