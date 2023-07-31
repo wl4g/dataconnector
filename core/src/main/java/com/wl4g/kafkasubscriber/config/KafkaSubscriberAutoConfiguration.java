@@ -57,8 +57,14 @@ public class KafkaSubscriberAutoConfiguration {
     @ConditionalOnMissingBean
     public SubscribeEngineCustomizer defaultSubscriberEngineCustomizer(KafkaSubscriberProperties config) {
         return new SubscribeEngineCustomizer() {
+            // TODO rename sourceProvider ??
             @Override
-            public List<SubscriberInfo> loadSubscribers(SubscriberInfo query) {
+            public List<KafkaSubscriberProperties.SourceProperties> loadSources(String pipelineName, String sourceProvider) {
+                return config.getDefinitions().getSources();
+            }
+
+            @Override
+            public List<SubscriberInfo> loadSubscribers(String pipelineName, SubscriberInfo query) {
                 return config.getDefinitions().getSubscribers();
             }
         };

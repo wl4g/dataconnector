@@ -53,7 +53,7 @@ public class CachingSubscriberRegistry {
     public Collection<SubscriberInfo> getShardingAll() {
         // TODO
 //        return registry.values();
-        return customizer.loadSubscribers(new SubscriberInfo());
+        return customizer.loadSubscribers("", new SubscriberInfo());
     }
 
     public void put(String id, SubscriberInfo subscriber) {

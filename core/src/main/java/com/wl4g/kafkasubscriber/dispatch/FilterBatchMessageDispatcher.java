@@ -225,7 +225,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
     private List<SubscriberRecord> matchToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
-        final List<SubscriberInfo> subscribers = customizer.loadSubscribers(SubscriberInfo.builder().build());
+        final List<SubscriberInfo> subscribers = customizer.loadSubscribers(pipelineConfig.getName(),
+                SubscriberInfo.builder().build());
 
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
@@ -234,7 +235,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                 sourceConfig.getMatchToSubscriberUpdateDelayTime().toNanos());
 
         return records.stream().map(r -> safeList(subscribers).stream()
-                .filter(s -> customizer.matchSubscriberRecord(s, r)).limit(1)
+                .filter(s -> customizer.matchSubscriberRecord(pipelineConfig.getName(), s, r)).limit(1)
                 .findFirst()
                 .map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
                     log.warn(String.format("%s :: No matched subscriber for headers: %s, key: %s, value: %s", groupId, r.headers(), r.key(), r.value()));
@@ -395,8 +396,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         final ObjectNode value = record.getRecord().value();
 
         final Producer<String, String> producer = determineKafkaProducer(subscriber, key);
-        final String filteredTopic = customizer.generateCheckpointTopic(pipelineConfig.getInternalFilter()
-                .getTopicPrefix(), subscriber.getId());
+        final String filteredTopic = customizer.generateCheckpointTopic(pipelineConfig.getName(),
+                pipelineConfig.getInternalFilter().getTopicPrefix(), subscriber.getId());
 
         final ProducerRecord<String, String> _record = new ProducerRecord<>(filteredTopic, key, value.toString());
         // Notice: Hand down the subscriber metadata of each record to the downstream.

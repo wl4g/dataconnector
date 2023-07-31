@@ -15,26 +15,26 @@
  *
  */
 
-package com.wl4g.kafkasubscriber;
+package com.wl4g.kafkasubscriber.quickstart;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * The {@link KafkaSubscriberApplicationIT}
+ * The {@link QuickStartApplicationIT}
  *
  * @author James Wong
  * @since v1.0
  **/
-@SpringBootApplication
-public class KafkaSubscriberApplicationIT {
+@SpringBootApplication(scanBasePackages = {"com.wl4g.kafkasubscriber"})
+public class QuickStartApplicationIT {
 
     public static void main(String[] args) {
         System.out.println("Integration test topic initializing ...");
-        new IntegrationTestTopicInitializer().start();
+        new QuickStartTopicInitializer().start();
 
         System.out.println("Integration test application starting ...");
-        SpringApplication.run(KafkaSubscriberApplicationIT.class, args);
+        SpringApplication.run(QuickStartApplicationIT.class, args);
     }
 
 }

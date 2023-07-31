@@ -1,16 +1,16 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="KafkaSubscriberApplicationIT_with_local" type="Application" factoryName="Application">
+  <configuration default="false" name="QuickStartApplicationIT_with_rcdev" type="Application" factoryName="Application">
     <option name="ALTERNATIVE_JRE_PATH" value="1.8" />
     <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
     <envs>
-      <env name="IT_KAFKA_SERVERS" value="localhost:9092" />
       <env name="IT_KAFKA_EMBEDDED_ENABLE" value="false" />
+      <env name="IT_KAFKA_SERVERS" value="10.74.34.131:9092" />
     </envs>
-    <option name="MAIN_CLASS_NAME" value="com.wl4g.kafkasubscriber.KafkaSubscriberApplicationIT" />
+    <option name="MAIN_CLASS_NAME" value="com.wl4g.kafkasubscriber.quickstart.QuickStartApplicationIT" />
     <module name="kafka-subscriber.core.test" />
     <extension name="coverage">
       <pattern>
-        <option name="PATTERN" value="com.wl4g.kafkasubscriber.*" />
+        <option name="PATTERN" value="com.wl4g.kafkasubscriber.quickstart.*" />
         <option name="ENABLED" value="true" />
       </pattern>
     </extension>

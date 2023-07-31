@@ -90,8 +90,8 @@ public class CheckpointTopicManager implements ApplicationRunner {
         final short replicationFactor = pipeline.getInternalFilter().getReplicationFactor();
 
         final List<Tuple2> topics = safeList(subscribers).stream()
-                .map(subscriber -> new Tuple2(customizer.generateCheckpointTopic(topicPrefix, subscriber.getId()),
-                        subscriber.getSettings()))
+                .map(subscriber -> new Tuple2(customizer.generateCheckpointTopic(pipeline.getName(),
+                        topicPrefix, subscriber.getId()), subscriber.getSettings()))
                 .collect(toList());
 
         // Listing of all topics.

@@ -154,9 +154,9 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                                 SubscriberInfo::getId,
                                 subscriber -> {
                                     subscriber.validate();
-                                    final String sinkFromTopic = customizer.generateCheckpointTopic(pipeline.getInternalFilter()
-                                            .getTopicPrefix(), subscriber.getId());
-                                    final String sinkGroupId = customizer.generateSinkGroupId(sinkConfig, subscriber.getId());
+                                    final String sinkFromTopic = customizer.generateCheckpointTopic(pipeline.getName(),
+                                            pipeline.getInternalFilter().getTopicPrefix(), subscriber.getId());
+                                    final String sinkGroupId = customizer.generateSinkGroupId(pipeline.getName(), sinkConfig, subscriber.getId());
 
                                     // Obtain custom sink.
                                     final ISubscribeSink sink = obtainSubscribeSink(sinkGroupId, sinkConfig.getName(), subscriber);

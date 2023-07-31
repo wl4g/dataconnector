@@ -43,11 +43,14 @@ import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.K
  **/
 public interface SubscribeEngineCustomizer {
 
-    //List<KafkaBrokerInfo> loadKafkaBrokers(@Null KafkaBroker query);
+    List<KafkaSubscriberProperties.SourceProperties> loadSources(@NotBlank String pipelineName,
+                                                                 @Null String sourceProvider);
 
-    List<SubscriberInfo> loadSubscribers(@Null SubscriberInfo query);
+    List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
+                                         @Null SubscriberInfo query);
 
-    default boolean matchSubscriberRecord(@NotNull SubscriberInfo subscriber,
+    default boolean matchSubscriberRecord(@NotBlank String pipelineName,
+                                          @NotNull SubscriberInfo subscriber,
                                           @NotNull ConsumerRecord<String, ObjectNode> record) {
         Assert2.notNullOf(subscriber, "subscriber");
         Assert2.notNullOf(record, "record");
@@ -69,7 +72,8 @@ public interface SubscribeEngineCustomizer {
         return false;
     }
 
-    default String generateCheckpointTopic(@NotBlank String topicPrefix,
+    default String generateCheckpointTopic(@NotBlank String pipelineName,
+                                           @NotBlank String topicPrefix,
                                            @NotBlank String subscriberId) {
         Assert2.hasTextOf(topicPrefix, "topicPrefix");
         Assert2.hasTextOf(subscriberId, "subscriberId");
@@ -79,7 +83,8 @@ public interface SubscribeEngineCustomizer {
         return topicPrefix.concat(String.valueOf(subscriberId));
     }
 
-    default String generateSinkGroupId(@Null KafkaSubscriberProperties.SinkProperties sinkConfig,
+    default String generateSinkGroupId(@NotBlank String pipelineName,
+                                       @Null KafkaSubscriberProperties.SinkProperties sinkConfig,
                                        @Null String subscriberId) {
         String groupIdPrefix = sinkConfig.getGroupIdPrefix();
         if (!StringUtils.endsWithAny(groupIdPrefix, "-", "_")) {

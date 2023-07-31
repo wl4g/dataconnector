@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.kafkasubscriber;
+package com.wl4g.kafkasubscriber.quickstart;
 
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
@@ -41,13 +41,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * The {@link IntegrationTestTopicInitializer}
+ * The {@link QuickStartTopicInitializer}
  *
  * @author James Wong
  * @since v1.0
  **/
 @Getter
-public class IntegrationTestTopicInitializer {
+public class QuickStartTopicInitializer {
 
     static boolean testKafkaEmbeddedEnable = Boolean.parseBoolean(System.getenv().getOrDefault("IT_KAFKA_EMBEDDED_ENABLE", "true"));
     static String testInputTopic = System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "test-input");

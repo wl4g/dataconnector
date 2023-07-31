@@ -129,6 +129,7 @@ kafka-subscriber:
       enable: true # By default: true
       # Required (default: [])
       sources:
+        #provider: defaultProvider
         - kafka01
         #- kafka02
       # Required (default: defaultSubscribeFilter)
