@@ -17,7 +17,7 @@
 
 package com.wl4g.kafkasubscriber.coordinator;
 
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;

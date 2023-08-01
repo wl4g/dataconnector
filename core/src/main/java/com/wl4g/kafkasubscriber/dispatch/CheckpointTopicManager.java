@@ -19,10 +19,12 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.wl4g.infra.common.lang.TypeConverts;
 import com.wl4g.infra.common.lang.tuples.Tuple2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -67,7 +69,7 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 @Slf4j
 @AllArgsConstructor
 public class CheckpointTopicManager implements ApplicationRunner {
-    private final KafkaSubscriberProperties config;
+    private final KafkaSubscribeConfiguration config;
     private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
 
@@ -80,7 +82,8 @@ public class CheckpointTopicManager implements ApplicationRunner {
     public void addTopicAllIfNecessary() {
         log.info("Creating topics if necessary of {} ...", config.getPipelines().size());
         config.getPipelines().forEach(pipeline -> {
-            final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipeline.getInternalFilter().getCheckpoint();
+            final CheckpointConfig checkpoint = pipeline.getParsedFilter().getFilterConfig().getCheckpoint();
+            // TODO may per subscriber a consumer properties(brokers)
             final String brokerServers = checkpoint.getProducerProps().getProperty(BOOTSTRAP_SERVERS_CONFIG);
             try (AdminClient adminClient = AdminClient.create(singletonMap(BOOTSTRAP_SERVERS_CONFIG,
                     brokerServers))) {
@@ -92,13 +95,13 @@ public class CheckpointTopicManager implements ApplicationRunner {
     }
 
     public static void doCreateOrUpdateTopicsIfNecessary(AdminClient adminClient,
-                                                         KafkaSubscriberProperties.EnginePipelineProperties pipeline,
+                                                         SubscribeEnginePipelineConfig pipeline,
                                                          SubscribeEngineCustomizer customizer,
                                                          Collection<SubscriberInfo> subscribers,
                                                          long timeout) throws ExecutionException, InterruptedException, TimeoutException {
-        final String topicPrefix = pipeline.getInternalFilter().getTopicPrefix();
-        final int partitions = pipeline.getInternalFilter().getTopicPartitions();
-        final short replicationFactor = pipeline.getInternalFilter().getReplicationFactor();
+        final String topicPrefix = pipeline.getParsedFilter().getFilterConfig().getTopicPrefix();
+        final int partitions = pipeline.getParsedFilter().getFilterConfig().getTopicPartitions();
+        final short replicationFactor = pipeline.getParsedFilter().getFilterConfig().getReplicationFactor();
 
         final List<Tuple2> topics = safeList(subscribers).stream()
                 .map(subscriber -> new Tuple2(customizer.generateCheckpointTopic(pipeline.getName(),

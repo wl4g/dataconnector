@@ -17,11 +17,10 @@
 package com.wl4g.kafkasubscriber.facade;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.EnginePipelineProperties;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SinkProperties;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SourceProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
@@ -50,26 +49,25 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 @Getter
 @AllArgsConstructor
 public class SubscribeEngineFacade {
-    private final KafkaSubscriberProperties config;
+    private final KafkaSubscribeConfiguration config;
     private final SubscribeEngineManager engineManager;
 
     public Map<String, SubscribePipelineBootstrap> getPipelineRegistry() {
         return engineManager.getPipelineRegistry();
     }
 
-    public SubscribePipelineBootstrap registerPipeline(EnginePipelineProperties pipelineConfig) {
+    public SubscribePipelineBootstrap registerPipeline(SubscribeEnginePipelineConfig pipelineConfig) {
         return engineManager.registerPipeline(pipelineConfig);
     }
 
     public SubscribeContainerBootstrap<FilterBatchMessageDispatcher> registerPipelineFilter(String pipelineName,
-                                                                                            SourceProperties sourceConfig) {
-        return engineManager.registerPipelineFilter(getRequiredPipelineProperties(pipelineName), sourceConfig);
+                                                                                            SubscribeSourceConfig subscribeSourceConfig) {
+        return engineManager.registerPipelineFilter(getRequiredPipelineProperties(pipelineName), subscribeSourceConfig);
     }
 
     public SubscribeContainerBootstrap<SinkBatchMessageDispatcher> registerPipelineSink(String pipelineName,
-                                                                                        SinkProperties sinkConfig,
                                                                                         SubscriberInfo subscriber) {
-        return engineManager.registerPipelineSink(getRequiredPipelineProperties(pipelineName), sinkConfig, subscriber);
+        return engineManager.registerPipelineSink(getRequiredPipelineProperties(pipelineName), subscriber);
     }
 
     public @NotNull Map<String, Boolean> startFilters(@NotBlank String pipelineName,
@@ -94,7 +92,7 @@ public class SubscribeEngineFacade {
         return getRequiredPipelineBootstrap(pipelineName).stopSinks(perSinkTimeout, subscriberIds);
     }
 
-    private EnginePipelineProperties getRequiredPipelineProperties(String pipelineName) {
+    private SubscribeEnginePipelineConfig getRequiredPipelineProperties(String pipelineName) {
         return safeList(config.getPipelines()).stream()
                 .filter(p -> StringUtils.equals(p.getName(), pipelineName))
                 .findFirst()

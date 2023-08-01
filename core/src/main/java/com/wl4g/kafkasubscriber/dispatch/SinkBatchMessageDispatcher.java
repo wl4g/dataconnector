@@ -18,11 +18,11 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
@@ -36,7 +36,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.time.Duration;
@@ -62,15 +61,14 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final SubscriberInfo subscriber;
     private final ISubscribeSink subscribeSink;
 
-    public SinkBatchMessageDispatcher(ApplicationContext context,
-                                      KafkaSubscriberProperties.EnginePipelineProperties config,
+    public SinkBatchMessageDispatcher(SubscribeEnginePipelineConfig config,
                                       SubscribeEngineCustomizer customizer,
                                       CachingSubscriberRegistry registry,
                                       String topicDesc,
                                       String groupId,
                                       SubscriberInfo subscriber,
                                       ISubscribeSink sink) {
-        super(context, config, customizer, registry, topicDesc, groupId);
+        super(config, customizer, registry, topicDesc, groupId);
         this.subscribeSink = Assert2.notNullOf(sink, "sink");
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
     }
@@ -87,7 +85,8 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
         final long sinkBeginTime = System.nanoTime();
 
         // Wait for all sink to be completed.
-        if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+        if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint()
+                .getQos().isAnyRetriesAtMostOrStrictly()) {
             final Set<SinkResult> completedSinkResults = new HashSet<>(sinkResults.size());
             while (sinkResults.size() > 0) {
                 final Iterator<SinkResult> it = sinkResults.iterator();
@@ -108,7 +107,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                             addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getRecord().topic(),
                                     sr.getRecord().partition(), groupId, null);
 
-                            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+                            if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                     break; // give up and lose
                                 }
@@ -126,7 +125,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                                 log.warn("{} :: {} :: User ask to give up re-trying again sink. sr : {}, reason :{}",
                                         groupId, subscriber.getId(), sr, reason.getMessage());
                             } else {
-                                if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
+                                if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                     if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
                                         break; // give up and lose
                                     }

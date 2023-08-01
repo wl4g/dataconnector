@@ -14,31 +14,30 @@
  * limitations under the License.
  */
 
-package com.wl4g.kafkasubscriber.filter;
+package com.wl4g.kafkasubscriber.sink;
 
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
-
-import java.util.List;
-import java.util.function.Function;
+import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
- * The {@link ISubscribeFilter}
+ * The {@link AbstractSubscribeSink}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
+@Getter
+@Setter
+public abstract class AbstractSubscribeSink implements ISubscribeSink {
 
-    String getName();
+    private String name;
+    private SubscribeSinkConfig sinkConfig = new SubscribeSinkConfig();
 
-    String getType();
-
-    SubscribeFilterConfig getFilterConfig();
-
-    void validate();
-
-    void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime);
+    @Override
+    public void validate() {
+        Assert2.hasTextOf(name, "name");
+        sinkConfig.validate();
+    }
 
 }

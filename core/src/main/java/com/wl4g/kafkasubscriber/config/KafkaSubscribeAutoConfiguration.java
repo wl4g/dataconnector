@@ -16,20 +16,13 @@
 
 package com.wl4g.kafkasubscriber.config;
 
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
-import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider;
-import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider.DefaultStaticSourceProvider;
-import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
-import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
-import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
-import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,23 +34,23 @@ import org.springframework.context.annotation.Configuration;
 import java.util.List;
 
 /**
- * The {@link KafkaSubscriberAutoConfiguration}
+ * The {@link KafkaSubscribeAutoConfiguration}
  *
  * @author James Wong
  * @since v1.0
  **/
 @Configuration
-public class KafkaSubscriberAutoConfiguration {
+public class KafkaSubscribeAutoConfiguration {
 
     @Bean
     @ConfigurationProperties(prefix = "kafka-subscriber")
-    public KafkaSubscriberProperties kafkaSubscriberProperties(ApplicationContext context) {
-        return new KafkaSubscriberProperties(context);
+    public KafkaSubscribeConfiguration kafkaSubscriberConfiguration(ApplicationContext context) {
+        return new KafkaSubscribeConfiguration(context);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(KafkaSubscriberProperties config) {
+    public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(KafkaSubscribeConfiguration config) {
         return new SubscribeEngineCustomizer() {
             @Override
             public List<SubscriberInfo> loadSubscribers(String pipelineName, SubscriberInfo query) {
@@ -66,24 +59,17 @@ public class KafkaSubscriberAutoConfiguration {
         };
     }
 
-    @Bean(DefaultStaticSourceProvider.BEAN_NAME)
-    @ConditionalOnMissingBean
-    public SubscribeSourceProvider defaultSubscribeSourceProvider(KafkaSubscriberProperties config) {
-        return new DefaultStaticSourceProvider(config);
-    }
-
     @Bean
-    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscriberProperties config, SubscribeEngineManager engine) {
+    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscribeConfiguration config, SubscribeEngineManager engine) {
         return new SubscribeEngineFacade(config, engine);
     }
 
     @Bean
     public SubscribeEngineManager kafkaSubscribeManager(ApplicationContext context,
-                                                        KafkaSubscriberProperties config,
+                                                        KafkaSubscribeConfiguration config,
                                                         SubscribeEngineCustomizer customizer,
-                                                        SubscribeSourceProvider sourceProvider,
                                                         CachingSubscriberRegistry registry) {
-        return new SubscribeEngineManager(context, config, customizer, sourceProvider, registry);
+        return new SubscribeEngineManager(context, config, customizer, registry);
     }
 
     @Bean
@@ -94,20 +80,8 @@ public class KafkaSubscriberAutoConfiguration {
         return new SubscribeMeter(context, meterRegistry, appName, port);
     }
 
-    @Bean(DefaultRecordMatchSubscribeFilter.BEAN_NAME)
-    @ConditionalOnMissingBean
-    public ISubscribeFilter defaultRecordMatchSubscribeFilter() {
-        return new DefaultRecordMatchSubscribeFilter();
-    }
-
-    @Bean(DefaultPrintSubscribeSink.BEAN_NAME)
-    @ConditionalOnMissingBean
-    public ISubscribeSink defaultSubscriberSink() {
-        return new DefaultPrintSubscribeSink();
-    }
-
     @Bean
-    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscriberProperties config,
+    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscribeConfiguration config,
                                                                SubscribeEngineCustomizer facade) {
         return new CachingSubscriberRegistry(config, facade);
     }
@@ -120,7 +94,7 @@ public class KafkaSubscriberAutoConfiguration {
     }
 
     @Bean
-    public CheckpointTopicManager filteredTopicManager(KafkaSubscriberProperties config,
+    public CheckpointTopicManager filteredTopicManager(KafkaSubscribeConfiguration config,
                                                        SubscribeEngineCustomizer customizer,
                                                        CachingSubscriberRegistry registry) {
         return new CheckpointTopicManager(config, customizer, registry);

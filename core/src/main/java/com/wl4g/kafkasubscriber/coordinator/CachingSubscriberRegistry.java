@@ -18,9 +18,9 @@
 package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import lombok.Getter;
 
 import java.util.Collection;
@@ -35,11 +35,11 @@ import java.util.concurrent.ConcurrentHashMap;
  **/
 public class CachingSubscriberRegistry {
 
-    private final @Getter KafkaSubscriberProperties config;
+    private final @Getter KafkaSubscribeConfiguration config;
     private final @Getter SubscribeEngineCustomizer customizer;
     private final Map<String, SubscriberInfo> registry;
 
-    public CachingSubscriberRegistry(KafkaSubscriberProperties config,
+    public CachingSubscriberRegistry(KafkaSubscribeConfiguration config,
                                      SubscribeEngineCustomizer customizer) {
         this.config = Assert2.notNullOf(config, "config");
         this.customizer = Assert2.notNullOf(customizer, "customizer");

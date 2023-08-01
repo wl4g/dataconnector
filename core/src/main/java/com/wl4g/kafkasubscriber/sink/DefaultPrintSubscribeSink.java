@@ -29,9 +29,14 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @since v1.0
  **/
 @Slf4j
-public class DefaultPrintSubscribeSink implements ISubscribeSink {
+public class DefaultPrintSubscribeSink extends AbstractSubscribeSink {
 
-    public static final String BEAN_NAME = "defaultSubscribeSink";
+    public static final String TYPE_NAME = "PRINT";
+
+    @Override
+    public String getType() {
+        return TYPE_NAME;
+    }
 
     @Override
     public SinkBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,

@@ -18,9 +18,11 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeExecutorConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
@@ -29,7 +31,6 @@ import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
 
@@ -38,6 +39,7 @@ import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -60,8 +62,7 @@ import static java.util.Collections.synchronizedList;
 public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
-    protected final ApplicationContext context;
-    protected final KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig;
+    protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
     protected final ThreadPoolExecutor sharedNonSequenceExecutor;
@@ -69,13 +70,11 @@ public abstract class AbstractBatchMessageDispatcher
     protected final String topicDesc;
     protected final String groupId;
 
-    public AbstractBatchMessageDispatcher(ApplicationContext context,
-                                          KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig,
+    public AbstractBatchMessageDispatcher(SubscribeEnginePipelineConfig pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
                                           String topicDesc,
                                           String groupId) {
-        this.context = Assert2.notNullOf(context, "context");
         this.pipelineConfig = Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = Assert2.notNullOf(registry, "registry");
@@ -83,7 +82,7 @@ public abstract class AbstractBatchMessageDispatcher
         this.topicDesc = Assert2.notNullOf(topicDesc, "topicDesc");
 
         // Create the shared filter single executor.
-        final KafkaSubscriberProperties.GenericProcessProperties processConfig = pipelineConfig.getInternalFilter().getProcessProps();
+        final SubscribeExecutorConfig processConfig = pipelineConfig.getParsedFilter().getFilterConfig().getExecutorProps();
         this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
                 processConfig.getSharedExecutorThreadPoolSize(),
                 0L, TimeUnit.MILLISECONDS,
@@ -141,7 +140,7 @@ public abstract class AbstractBatchMessageDispatcher
         } catch (Throwable ex) {
             log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
-            if (pipelineConfig.getInternalFilter().getCheckpoint().getQos().isMoseOnce()) {
+            if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
         }
@@ -166,10 +165,10 @@ public abstract class AbstractBatchMessageDispatcher
      * Max retries then give up if it fails.
      */
     protected boolean shouldGiveUpRetry(long retryBegin, int retryTimes) {
-        final KafkaSubscriberProperties.CheckpointProperties checkpoint = pipelineConfig.getInternalFilter().getCheckpoint();
+        final CheckpointConfig checkpoint = pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint();
         return checkpoint.getQos().isMoseOnceOrAnyRetriesAtMost()
                 && (retryTimes > checkpoint.getQoSMaxRetries()
-                || (System.nanoTime() - retryBegin) > checkpoint.getQoSMaxRetriesTimeout().toNanos());
+                || (System.nanoTime() - retryBegin) > Duration.ofMillis(checkpoint.getQoSMaxRetriesTimeout()).toNanos());
     }
 
     protected void addCounterMetrics(@NotNull SubscribeMeter.MetricsName metrics,

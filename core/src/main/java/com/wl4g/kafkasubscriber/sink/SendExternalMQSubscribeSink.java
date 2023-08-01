@@ -19,24 +19,30 @@ package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher.SinkCompleted;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * The {@link SendExternalMQSubscriberSink}
+ * The {@link SendExternalMQSubscribeSink}
  *
  * @author James Wong
  * @since v1.0
  **/
-public class SendExternalMQSubscriberSink implements ISubscribeSink {
+public class SendExternalMQSubscribeSink extends AbstractSubscribeSink {
+
+    public static final String TYPE_NAME = "SEND_EXTERNAL_MQ";
 
     @Override
-    public SinkBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                                           String subscriberId,
-                                                           boolean sequence,
-                                                           ConsumerRecord<String, ObjectNode> record) {
-        // TODO
-        return null;
+    public String getType() {
+        return TYPE_NAME;
+    }
+
+    @Override
+    public SinkCompleted doSink(CachingSubscriberRegistry registry,
+                                String subscriberId,
+                                boolean sequence,
+                                ConsumerRecord<String, ObjectNode> record) {
+        throw new UnsupportedOperationException();
     }
 
 }

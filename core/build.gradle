@@ -16,10 +16,10 @@ dependencies {
     implementation "org.springframework.kafka:spring-kafka"
     annotationProcessor 'org.projectlombok:lombok:1.18.24'
     compileOnly 'org.projectlombok:lombok:1.18.24'
-    implementation "io.swagger.core.v3:swagger-annotations:2.2.2"
-    implementation "com.wl4g:infra-common:3.1.26"
+    implementation 'io.swagger.core.v3:swagger-annotations:2.2.2'
+    implementation 'com.wl4g:infra-common:3.1.26'
     implementation 'com.googlecode.aviator:aviator:5.3.1'
-    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+    testImplementation('org.springframework.boot:spring-boot-starter-test') {
         exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
     }
     testImplementation 'org.springframework.kafka:spring-kafka-test'

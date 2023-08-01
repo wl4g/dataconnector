@@ -49,7 +49,7 @@ kafka-subscriber:
       consumerProps: &baseConsumerProps
         request.timeout.ms: 30000
         auto.offset.reset: earliest
-      processProps: &baseProcessProps
+      executorProps: &baseExecutorProps
         sharedExecutorThreadPoolSize: 50
         sharedExecutorQueueSize: 500
         sequenceExecutorsMaxCountLimit: 100
@@ -57,12 +57,13 @@ kafka-subscriber:
         executorWarmUp: true
 
     sources:
-      - name: defaultStaticSourceProvider # Custom source provider Spring bean name
+      - !STATIC
+        name: defaultStaticSourceProvider # Custom source provider Spring bean name
         staticConfigs:
           - name: kafka01
             topicPattern: "test-input"
             parallelism: 2
-            matchToSubscriberUpdateDelayTime: 3s
+            matchToSubscriberUpdateDelayTime: 3
             consumerProps:
               bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
               group.id: "test_shared_source_101"
@@ -70,53 +71,60 @@ kafka-subscriber:
           - name: kafka02
             topicPattern: "test-input"
             parallelism: 2
-            matchToSubscriberUpdateDelayTime: 3s
+            matchToSubscriberUpdateDelayTime: 3
             consumerProps:
               bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
               group.id: "shared_source_102"
               <<: *baseConsumerProps
-      #- name: jdbcSourceProvider # The example custom JDBC source provider.
-      #  jdbcUrl:
-      #  username:
-      #  password:
-      #  sql:
+      #- !JDBC
+      #  name: jdbcSourceProvider # The example custom JDBC source provider.
+      #  jdbcConfig:
+      #    jdbcUrl:
+      #    username:
+      #    password:
+      #    sql:
 
     filters:
-      - name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
-        topicPrefix: "test_shared_filtered_"
-        topicPartitions: 10
-        replicationFactor: 1
-        processProps:
-          <<: *baseProcessProps
-        checkpoint:
-          qoS: 3 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
-          qoSMaxRetries: 5
-          qoSMaxRetriesTimeout: 6h
-          producerMaxCountLimit: 100
-          producerProps:
-            #bootstrap.servers: "localhost:9092" # By default: {.source.bootstrapServers}
-            acks: "0"
-            request.timeout.ms: 30000
-            max.request.size: 1048576
-            send.buffer.bytes: 131072
-            retries: 5
-            retry.backoff.ms: 6000
-            compression.type: gzip
-          defaultTopicProps:
-            cleanup.policy: "delete"
-            retention.ms: 86400000 # By default: 1day
-            retention.bytes: 1073741824 # By default: 1G
+      - !EXPRESSION_MATCH
+        name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
+        filterConfig:
+          topicPrefix: "test_shared_filtered_"
+          topicPartitions: 10
+          replicationFactor: 1
+          executorProps:
+            <<: *baseExecutorProps
+          checkpoint:
+            # TODO support directly parse to Enum
+            qosType: 3 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
+            qoSMaxRetries: 5
+            qoSMaxRetriesTimeout: 1800000 # 30min
+            producerMaxCountLimit: 100
+            producerProps:
+              bootstrap.servers: "localhost:9092" # By default: {.source.bootstrapServers}
+              acks: "0"
+              request.timeout.ms: 30000
+              max.request.size: 1048576
+              send.buffer.bytes: 131072
+              retries: 5
+              retry.backoff.ms: 6000
+              compression.type: gzip
+            defaultTopicProps:
+              cleanup.policy: "delete"
+              retention.ms: 86400000 # By default: 1day
+              retention.bytes: 1073741824 # By default: 1G
 
     sinks:
-      - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
-        groupIdPrefix: "test_isolation_sink_"
-        parallelism: 2
-        processProps:
-          <<: *baseProcessProps
-        consumerProps:
-          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "test_shared_source_101"
-          <<: *baseConsumerProps
+      - !PRINT
+        name: defaultSubscribeSink # Custom subscriber sink Spring bean name
+        sinkConfig:
+          groupIdPrefix: "test_isolation_sink_"
+          parallelism: 2
+          executorProps:
+            <<: *baseExecutorProps
+          consumerProps:
+            bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+            group.id: "test_shared_source_101"
+            <<: *baseConsumerProps
 
     ## Notice: The following configuration method is usually used in experimental scenarios to
     ## define the subscriber list. When integrating into actual business applications, the interface

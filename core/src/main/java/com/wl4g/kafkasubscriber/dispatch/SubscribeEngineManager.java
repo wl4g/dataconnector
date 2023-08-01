@@ -18,15 +18,15 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.wl4g.infra.common.collection.CollectionUtils2;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaConsumerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SourceProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.BaseConsumerConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
-import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider;
-import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
+import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -34,7 +34,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
@@ -55,8 +54,8 @@ import java.util.stream.Collectors;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
-import static com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.EnginePipelineProperties;
-import static com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SinkProperties;
+import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableMap;
 
@@ -71,21 +70,18 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ApplicationContext context;
-    private final KafkaSubscriberProperties config;
+    private final KafkaSubscribeConfiguration config;
     private final SubscribeEngineCustomizer customizer;
-    private final SubscribeSourceProvider sourceProvider;
     private final CachingSubscriberRegistry registry;
     private final Map<String, SubscribePipelineBootstrap> pipelineRegistry;
 
     public SubscribeEngineManager(@NotNull ApplicationContext context,
-                                  @NotNull KafkaSubscriberProperties config,
+                                  @NotNull KafkaSubscribeConfiguration config,
                                   @NotNull SubscribeEngineCustomizer customizer,
-                                  @NotNull SubscribeSourceProvider sourceProvider,
                                   @NotNull CachingSubscriberRegistry registry) {
         this.context = notNullOf(context, "context");
         this.config = notNullOf(config, "config");
         this.customizer = notNullOf(customizer, "customizer");
-        this.sourceProvider = notNullOf(sourceProvider, "sourceProvider");
         this.registry = notNullOf(registry, "registry");
         this.pipelineRegistry = new ConcurrentHashMap<>(config.getPipelines().size());
     }
@@ -129,7 +125,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                 .forEach((pipelineName, pipelineBootstrap) -> {
                     safeMap(pipelineBootstrap.getFilterBootstraps()) // source=>bootstrap
                             .forEach((sourceName, value) -> log.info("Registered filter subscribe bootstrap of pipeline: {}, source: {}, topic: {}, groupId: {}",
-                                    pipelineName, value.getDispatcher().getSourceConfig().getName(),
+                                    pipelineName, value.getDispatcher().getSubscribeSourceConfig().getName(),
                                     value.getDispatcher().getTopicDesc(),
                                     value.getDispatcher().getGroupId()));
                     safeMap(pipelineBootstrap.getSinkBootstraps()) // subscriberId=>bootstrap
@@ -155,7 +151,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
      * @param pipelineConfig pipeline properties.
      * @return If it does not exist, it will be newly registered and return the pipeline bootstrap object, otherwise it will return null.
      */
-    public SubscribePipelineBootstrap registerPipeline(EnginePipelineProperties pipelineConfig) {
+    public SubscribePipelineBootstrap registerPipeline(SubscribeEnginePipelineConfig pipelineConfig) {
         Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         pipelineConfig.validate();
 
@@ -173,16 +169,16 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
             // Build filter dispatchers.
             final Map<String, SubscribeContainerBootstrap<FilterBatchMessageDispatcher>> filterBootstraps =
-                    safeList(pipelineConfig.getInternalSourceProvider().loadSources(pipelineName))
+                    safeList(pipelineConfig.getParsedSourceProvider().loadSources(pipelineName))
                             .stream()
                             .collect(Collectors.toMap(
-                                    KafkaSubscriberProperties.BaseConsumerProperties::getName,
+                                    BaseConsumerConfig::getName,
                                     source -> registerPipelineFilter(pipelineConfig, source)));
 
             Map<String, SubscribeContainerBootstrap<SinkBatchMessageDispatcher>> sinkBootstraps = emptyMap();
             // Register sink config If necessary. (per subscriber a sink dispatcher instance)
-            final KafkaSubscriberProperties.SinkProperties sinkConfig = pipelineConfig.getInternalSink();
-            if (Objects.isNull(sinkConfig)) {
+            final ISubscribeSink subscribeSink = pipelineConfig.getParsedSink();
+            if (Objects.isNull(subscribeSink)) {
                 log.info("Pipeline sinkConfig is disabled, skip register sinkConfig dispatcher, pipeline: {}",
                         pipelineConfig);
             } else {
@@ -191,102 +187,63 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                         .stream()
                         .collect(Collectors.toMap(
                                 SubscriberInfo::getId,
-                                subscriber -> registerPipelineSink(pipelineConfig, sinkConfig, subscriber)));
+                                subscriber -> registerPipelineSink(pipelineConfig, subscriber)));
             }
 
             return new SubscribePipelineBootstrap(pipelineName, filterBootstraps, sinkBootstraps);
         });
     }
 
-    public SubscribeContainerBootstrap<FilterBatchMessageDispatcher> registerPipelineFilter(EnginePipelineProperties pipelineConfig,
-                                                                                            SourceProperties sourceConfig) {
+    public SubscribeContainerBootstrap<FilterBatchMessageDispatcher> registerPipelineFilter(
+            SubscribeEnginePipelineConfig pipelineConfig,
+            SubscribeSourceConfig subscribeSourceConfig) {
         Assert2.notNullOf(pipelineConfig, "pipelineConfig");
-        Assert2.notNullOf(sourceConfig, "sourceConfig");
+        Assert2.notNullOf(subscribeSourceConfig, "sourceConfig");
         pipelineConfig.validate();
-        sourceConfig.validate();
-
-        // Obtain custom filter.
-        final ISubscribeFilter filter = obtainSubscribeFilter(sourceConfig.getGroupId(), pipelineConfig.getFilter());
+        subscribeSourceConfig.validate();
+        subscribeSourceConfig.optimizeProperties();
 
         // Build acknowledge producer.
         final Producer<String, String> acknowledgeProducer = KafkaProducerBuilder
-                .buildDefaultAcknowledgedKafkaProducer(sourceConfig.getConsumerProps()
+                .buildDefaultAcknowledgedKafkaProducer(subscribeSourceConfig.getConsumerProps()
                         .get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
 
         // Build filter dispatcher.
         final FilterBatchMessageDispatcher dispatcher = new FilterBatchMessageDispatcher(
-                context, pipelineConfig, sourceConfig, customizer, registry, sourceConfig.getTopicPattern().toString(),
-                sourceConfig.getGroupId(), filter, acknowledgeProducer);
+                pipelineConfig, subscribeSourceConfig, customizer, registry,
+                subscribeSourceConfig.getTopicPattern(),
+                subscribeSourceConfig.getGroupId(), pipelineConfig.getParsedFilter(), acknowledgeProducer);
 
         return new SubscribeContainerBootstrap<>(dispatcher,
-                new KafkaConsumerBuilder(sourceConfig.getConsumerProps())
-                        .buildSubscriber(sourceConfig.getTopicPattern(), sourceConfig.getGroupId(),
-                                sourceConfig.getParallelism(), dispatcher));
+                new KafkaConsumerBuilder(subscribeSourceConfig.getConsumerProps())
+                        .buildSubscriber(Pattern.compile(subscribeSourceConfig.getTopicPattern()),
+                                subscribeSourceConfig.getGroupId(),
+                                subscribeSourceConfig.getParallelism(), dispatcher));
     }
 
-    public SubscribeContainerBootstrap<SinkBatchMessageDispatcher> registerPipelineSink(EnginePipelineProperties pipelineConfig,
-                                                                                        SinkProperties sinkConfig,
-                                                                                        SubscriberInfo subscriber) {
+    public SubscribeContainerBootstrap<SinkBatchMessageDispatcher> registerPipelineSink(
+            SubscribeEnginePipelineConfig pipelineConfig,
+            SubscriberInfo subscriber) {
         Assert2.notNullOf(pipelineConfig, "pipelineConfig");
-        Assert2.notNullOf(sinkConfig, "sinkConfig");
         Assert2.notNullOf(subscriber, "subscriber");
         pipelineConfig.validate();
-        sinkConfig.validate();
         subscriber.validate();
 
-        final String sinkFromTopic = customizer.generateCheckpointTopic(pipelineConfig.getName(),
-                pipelineConfig.getInternalFilter().getTopicPrefix(), subscriber.getId());
-        final String sinkGroupId = customizer.generateSinkGroupId(pipelineConfig.getName(), sinkConfig, subscriber.getId());
+        final SubscribeFilterConfig filterConfig = pipelineConfig.getParsedFilter().getFilterConfig();
+        final SubscribeSinkConfig sinkConfig = pipelineConfig.getParsedSink().getSinkConfig();
 
-        // Obtain custom sink.
-        final ISubscribeSink sink = obtainSubscribeSink(sinkGroupId, sinkConfig.getName(), subscriber);
+        final String sinkFromTopic = customizer.generateCheckpointTopic(pipelineConfig.getName(),
+                filterConfig.getTopicPrefix(), subscriber.getId());
+        final String sinkGroupId = customizer.generateSinkGroupId(pipelineConfig.getName(), sinkConfig, subscriber.getId());
 
         // Build sink dispatcher.
         final SinkBatchMessageDispatcher dispatcher = new SinkBatchMessageDispatcher(
-                context, pipelineConfig, customizer, registry, sinkFromTopic, sinkGroupId, subscriber, sink);
+                pipelineConfig, customizer, registry, sinkFromTopic, sinkGroupId, subscriber, pipelineConfig.getParsedSink());
 
         return new SubscribeContainerBootstrap<>(dispatcher,
                 new KafkaConsumerBuilder(sinkConfig.getConsumerProps())
                         .buildSubscriber(Pattern.compile(sinkFromTopic), sinkGroupId,
                                 sinkConfig.getParallelism(), dispatcher));
-    }
-
-    /**
-     * Obtain custom subscribe filter. (Each pipeline custom filter a instance)
-     *
-     * @param groupId          groupId
-     * @param customFilterName customFilterName
-     * @return {@link ISubscribeFilter}
-     */
-    private ISubscribeFilter obtainSubscribeFilter(String groupId, String customFilterName) {
-        try {
-            log.info("{} :: Obtaining custom subscriber filter...", customFilterName);
-            return context.getBean(customFilterName, ISubscribeFilter.class);
-        } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("%s :: Could not obtain custom subscribe filter of bean %s",
-                    groupId, customFilterName));
-        }
-    }
-
-    /**
-     * Obtain custom subscribe sinker. (Each pipeline custom sink instances)
-     *
-     * @param groupId          groupId
-     * @param customFilterName customFilterName
-     * @param subscriber       subscriber
-     * @return {@link ISubscribeSink}
-     */
-    private ISubscribeSink obtainSubscribeSink(String groupId,
-                                               String customFilterName,
-                                               SubscriberInfo subscriber) {
-        try {
-            log.info("{} :: {} :: Creating custom subscriber sink of bean {}",
-                    groupId, subscriber.getId(), customFilterName);
-            return context.getBean(customFilterName, ISubscribeSink.class);
-        } catch (NoSuchBeanDefinitionException ex) {
-            throw new IllegalStateException(String.format("%s :: %s :: Could not getting custom subscriber sink of bean %s",
-                    groupId, subscriber.getId(), customFilterName));
-        }
     }
 
     @Slf4j
@@ -306,21 +263,21 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                                     final SubscribeContainerBootstrap<FilterBatchMessageDispatcher> bootstrap = entry.getValue();
 
                                     log.info("Starting filter subscribe bootstrap of pipeline: {}, source: {}, topic: {}, groupId: {}",
-                                            name, bootstrap.getDispatcher().getSourceConfig().getName(),
+                                            name, bootstrap.getDispatcher().getSubscribeSourceConfig().getName(),
                                             bootstrap.getDispatcher().getTopicDesc(),
                                             bootstrap.getDispatcher().getGroupId());
 
                                     bootstrap.start();
 
                                     log.info("Started filter subscribe bootstrap of pipeline: {}, source: {}, topic: {}, groupId: {}",
-                                            name, bootstrap.getDispatcher().getSourceConfig().getName(),
+                                            name, bootstrap.getDispatcher().getSubscribeSourceConfig().getName(),
                                             bootstrap.getDispatcher().getTopicDesc(),
                                             bootstrap.getDispatcher().getGroupId());
 
                                     return entry.getKey();
                                 } catch (Throwable th) {
                                     log.error("Failed to start filter subscribe bootstrap of pipeline: {}, source: {}, topic: {}, groupId: {}",
-                                            name, entry.getValue().getDispatcher().getSourceConfig().getName(),
+                                            name, entry.getValue().getDispatcher().getSubscribeSourceConfig().getName(),
                                             entry.getValue().getDispatcher().getTopicDesc(),
                                             entry.getValue().getDispatcher().getGroupId(), th);
                                     return entry.getKey();
@@ -360,10 +317,10 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
             final Map<String, Boolean> result = safeMap(filterBootstraps).entrySet().stream()
                     .filter(e -> CollectionUtils2.isEmptyArray(sourceNames) || StringUtils.equalsAny(e.getKey(), sourceNames))
                     .collect(Collectors.toMap(
-                            entry -> entry.getValue().getDispatcher().getSourceConfig().getName(),
+                            entry -> entry.getValue().getDispatcher().getSubscribeSourceConfig().getName(),
                             entry -> {
                                 final SubscribeContainerBootstrap<FilterBatchMessageDispatcher> bootstrap = entry.getValue();
-                                final String sourceName = bootstrap.getDispatcher().getSourceConfig().getName();
+                                final String sourceName = bootstrap.getDispatcher().getSubscribeSourceConfig().getName();
                                 try {
                                     log.info("Stopping subscribe for source: {}", sourceName);
                                     final boolean r = bootstrap.stop(perFilterTimeout);

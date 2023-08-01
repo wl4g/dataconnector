@@ -1,25 +1,26 @@
 /*
- * Copyright 2017 ~ 2025 the original authors James Wong.
+ *  Copyright (C) 2023 ~ 2035 the original authors WL4G (James Wong).
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *        http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ALL_OR KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
  */
 
-package com.wl4g.kafkasubscriber.facade;
+package com.wl4g.kafkasubscriber.custom;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -81,9 +82,9 @@ public interface SubscribeEngineCustomizer {
     }
 
     default String generateSinkGroupId(@NotBlank String pipelineName,
-                                       @Null KafkaSubscriberProperties.SinkProperties sinkConfig,
+                                       @Null KafkaSubscribeConfiguration.SubscribeSinkConfig subscribeSinkConfig,
                                        @Null String subscriberId) {
-        String groupIdPrefix = sinkConfig.getGroupIdPrefix();
+        String groupIdPrefix = subscribeSinkConfig.getGroupIdPrefix();
         if (!StringUtils.endsWithAny(groupIdPrefix, "-", "_")) {
             groupIdPrefix += "_";
         }

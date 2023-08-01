@@ -17,11 +17,12 @@
 package com.wl4g.kafkasubscriber.config;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider;
-import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider.DefaultStaticSourceProvider;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
+import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
+import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
+import com.wl4g.kafkasubscriber.source.ISubscribeSourceProvider;
+import com.wl4g.kafkasubscriber.source.StaticSubscribeSourceProvider;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -36,7 +37,6 @@ import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.unit.DataSize;
 
@@ -51,7 +51,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.regex.Pattern;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.stream.Collectors.toList;
@@ -62,7 +61,7 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 
 /**
- * The {@link KafkaSubscriberProperties}
+ * The {@link KafkaSubscribeConfiguration}
  *
  * @author James Wong
  * @since v1.0
@@ -72,140 +71,109 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZE
 @Setter
 @SuperBuilder
 @ToString
-public class KafkaSubscriberProperties implements InitializingBean {
+public class KafkaSubscribeConfiguration implements InitializingBean {
     private final ApplicationContext context;
 
-    private @Builder.Default DefinitionProperties definitions = new DefinitionProperties();
-    private @Builder.Default List<EnginePipelineProperties> pipelines = new ArrayList<>(1);
+    private @Builder.Default SubscribeDefinitionConfig definitions = new SubscribeDefinitionConfig();
+    private @Builder.Default List<SubscribeEnginePipelineConfig> pipelines = new ArrayList<>(1);
 
-    public KafkaSubscriberProperties(ApplicationContext context) {
+    public KafkaSubscribeConfiguration(ApplicationContext context) {
         this.context = Assert2.notNullOf(context, "context");
     }
 
     @Override
     public void afterPropertiesSet() {
         try {
-            preValidateProperties();
+            beforeValidate();
             initParse();
-            optimizeProperties();
         } catch (Throwable th) {
             log.error("Failed to init subscriber properties", th);
             throw th;
         }
     }
 
-    private void preValidateProperties() {
+    private void beforeValidate() {
         definitions.validate();
-        pipelines.forEach(EnginePipelineProperties::validate);
+        pipelines.forEach(SubscribeEnginePipelineConfig::validate);
     }
 
     private void initParse() {
-        // Parse the source definitions.
-        safeList(definitions.getSources()).forEach(sourceDefine -> {
-            try {
-                sourceDefine.setSourceProvider((SubscribeSourceProvider) context.getBean(sourceDefine.getName()));
-            } catch (NoSuchBeanDefinitionException ex) {
-                throw new IllegalStateException(String.format("Not found the source definition '%s'", sourceDefine.getName()));
-            }
-        });
-
+        // Parsing to actuate source,filter,sink
         safeList(pipelines).forEach(p -> {
             // Parse the sources.
-            final SubscribeSourceProvider sourceProvider = safeList(definitions.getSources()).stream()
+            final ISubscribeSourceProvider sourceProvider = safeList(definitions.getSources()).stream()
                     .filter(s -> StringUtils.equals(p.getSource(), s.getName()))
-                    .map(SourceDefineProperties::getSourceProvider).findFirst()
+                    .findFirst()
                     .orElseThrow(() -> new IllegalStateException(String.format("Not found the source definition '%s'", p.getSource())));
-            p.setInternalSourceProvider(sourceProvider);
+            p.setParsedSourceProvider(sourceProvider);
 
             // Parse the filter.
-            final FilterProperties filter = safeList(definitions.getFilters()).stream()
-                    .filter(f -> StringUtils.equals(f.getName(), p.getFilter()))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException(String.format("Not found the filter '%s'", p.getFilter())));
-            p.setInternalFilter(filter);
+            final ISubscribeFilter filter = safeList(definitions.getFilters()).stream()
+                    .filter(f -> StringUtils.equals(p.getFilter(), f.getName()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(String.format("Not found the filter '%s'", p.getFilter())));
+            p.setParsedFilter(filter);
 
             // Parse the sink.
             if (isNotBlank(p.getSink())) {
-                final SinkProperties sink = safeList(definitions.getSinks()).stream()
+                final ISubscribeSink sink = safeList(definitions.getSinks()).stream()
                         .filter(s -> StringUtils.equals(s.getName(), p.getSink()))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException(String.format("Not found the sink '%s'", p.getSink())));
-                p.setInternalSink(sink);
+                p.setParsedSink(sink);
             }
         });
     }
 
-    private void optimizeProperties() {
-        definitions.getSources().forEach(sourceDefine -> sourceDefine.getStaticConfigs()
-                .forEach(SourceProperties::optimizeProperties));
-    }
-
-    // ----- definitions properties. -----
+    // ----- Definitions configuration. -----
 
     @Getter
     @Setter
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class DefinitionProperties {
-        private @Builder.Default List<SourceDefineProperties> sources = new ArrayList<>(2);
-        private @Builder.Default List<FilterProperties> filters = new ArrayList<>(2);
-        private @Builder.Default List<SinkProperties> sinks = new ArrayList<>(2);
+    public static class SubscribeDefinitionConfig {
+        private @Builder.Default List<ISubscribeSourceProvider> sources = new ArrayList<>(2);
+        private @Builder.Default List<ISubscribeFilter> filters = new ArrayList<>(2);
+        private @Builder.Default List<ISubscribeSink> sinks = new ArrayList<>(2);
         private @Builder.Default List<SubscriberInfo> subscribers = new ArrayList<>(2);
 
         public void validate() {
-            sources.forEach(SourceDefineProperties::validate);
-            filters.forEach(FilterProperties::validate);
-            sinks.forEach(SinkProperties::validate);
+            sources.forEach(ISubscribeSourceProvider::validate);
+            filters.forEach(ISubscribeFilter::validate);
+            sinks.forEach(ISubscribeSink::validate);
             subscribers.forEach(SubscriberInfo::validate);
 
             // Check for sources name duplicate.
             Assert2.isTrueOf(sources.size() == new HashSet<>(sources.stream()
-                    .map(SourceDefineProperties::getName).collect(toList())).size(), "sources name duplicate");
+                    .map(ISubscribeSourceProvider::getName).collect(toList())).size(), "sources name duplicate");
             // Check for filters name duplicate.
             Assert2.isTrueOf(filters.size() == new HashSet<>(filters.stream()
-                    .map(FilterProperties::getName).collect(toList())).size(), "filters name duplicate");
+                    .map(ISubscribeFilter::getName).collect(toList())).size(), "filters name duplicate");
             // Check for sinks name duplicate.
             Assert2.isTrueOf(sinks.size() == new HashSet<>(sinks.stream()
-                    .map(SinkProperties::getName).collect(toList())).size(), "sinks name duplicate");
+                    .map(ISubscribeSink::getName).collect(toList())).size(), "sinks name duplicate");
         }
     }
+
+    // ----- Pipelines configuration. -----
 
     @Getter
     @Setter
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SourceDefineProperties {
-        private @Builder.Default String name = DefaultStaticSourceProvider.BEAN_NAME;
-        private @Builder.Default List<SourceProperties> staticConfigs = new ArrayList<>(2);
-        // Parsed to transient properties.
-        private transient @NotNull SubscribeSourceProvider sourceProvider;
-
-        public void validate() {
-            Assert2.hasTextOf(name, "name");
-            staticConfigs.forEach(SourceProperties::validate);
-            // Check for static sources name duplicate.
-            Assert2.isTrueOf(staticConfigs.size() == new HashSet<>(staticConfigs.stream()
-                    .map(SourceProperties::getName).collect(toList())).size(), "static sources name duplicate");
-        }
-    }
-
-    // ----- pipelines properties. -----
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString
-    @NoArgsConstructor
-    public static class EnginePipelineProperties {
+    public static class SubscribeEnginePipelineConfig {
         private String name;
         private @Builder.Default boolean enable = true;
-        private @Builder.Default String source = DefaultStaticSourceProvider.BEAN_NAME;
-        private @Builder.Default String filter = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
-        private @Builder.Default String sink = DefaultPrintSubscribeSink.BEAN_NAME;
+        private @Builder.Default String source = StaticSubscribeSourceProvider.TYPE_NAME;
+        private @Builder.Default String filter = DefaultRecordMatchSubscribeFilter.TYPE_NAME;
+        private @Builder.Default String sink = DefaultPrintSubscribeSink.TYPE_NAME;
+        //
         // Parsed to transient properties.
-        private transient @NotNull SubscribeSourceProvider internalSourceProvider;
-        private transient @NotBlank FilterProperties internalFilter;
-        private transient @Null SinkProperties internalSink;
+        //
+        private transient @NotNull ISubscribeSourceProvider parsedSourceProvider;
+        private transient @NotBlank ISubscribeFilter parsedFilter;
+        private transient @Null ISubscribeSink parsedSink;
 
         public void validate() {
             Assert2.hasTextOf(name, "name");
@@ -219,18 +187,18 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
-    public static class SourceProperties extends BaseConsumerProperties {
-        private Pattern topicPattern;
-        private @Builder.Default Duration matchToSubscriberUpdateDelayTime = Duration.ofSeconds(3);
+    public static class SubscribeSourceConfig extends BaseConsumerConfig {
+        private String topicPattern;
+        private @Builder.Default Long matchToSubscriberUpdateDelayTime = 3_000L;
 
-        public SourceProperties() {
+        public SubscribeSourceConfig() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_0");
         }
 
         @Override
         public void validate() {
             super.validate();
-            Assert2.notNullOf(topicPattern, "topicPattern");
+            Assert2.hasTextOf(topicPattern, "topicPattern");
             Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
         }
 
@@ -279,16 +247,16 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class FilterProperties {
-        private @Builder.Default String name = DefaultRecordMatchSubscribeFilter.BEAN_NAME;
+    public static class SubscribeFilterConfig {
+        private @Builder.Default String name = DefaultRecordMatchSubscribeFilter.TYPE_NAME;
         private @Builder.Default String topicPrefix = "shared_filtered_";
         private @Builder.Default int topicPartitions = 10;
         private @Builder.Default short replicationFactor = 1;
-        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
-        private @Builder.Default CheckpointProperties checkpoint = new CheckpointProperties();
+        private @Builder.Default SubscribeExecutorConfig executorProps = new SubscribeExecutorConfig();
+        private @Builder.Default CheckpointConfig checkpoint = new CheckpointConfig();
 
         public void validate() {
-            this.processProps.validate();
+            this.executorProps.validate();
             Assert2.hasTextOf(topicPrefix, "topicPrefix");
             Assert2.hasTextOf(name, "customFilterBeanName");
             Assert2.notNullOf(checkpoint, "checkpoint");
@@ -300,18 +268,18 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
-    public static class SinkProperties extends BaseConsumerProperties {
+    public static class SubscribeSinkConfig extends BaseConsumerConfig {
         private @Builder.Default String groupIdPrefix = "isolation_sink_";
-        private @Builder.Default GenericProcessProperties processProps = new GenericProcessProperties();
+        private @Builder.Default SubscribeExecutorConfig executorProps = new SubscribeExecutorConfig();
 
-        public SinkProperties() {
-            setName(DefaultPrintSubscribeSink.BEAN_NAME);
+        public SubscribeSinkConfig() {
+            setName(DefaultPrintSubscribeSink.TYPE_NAME);
         }
 
         public void validate() {
             super.validate();
             Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
-            getProcessProps().validate();
+            getExecutorProps().validate();
         }
     }
 
@@ -320,7 +288,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static abstract class BaseConsumerProperties {
+    public static abstract class BaseConsumerConfig {
         private String name;
         // By force: min(concurrency, topicPartitions.length)
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
@@ -362,7 +330,7 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class GenericProcessProperties {
+    public static class SubscribeExecutorConfig {
         private @Builder.Default int sharedExecutorThreadPoolSize = 50;
         private @Builder.Default int sharedExecutorQueueSize = 500;
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
@@ -382,10 +350,12 @@ public class KafkaSubscriberProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class CheckpointProperties {
-        private @Builder.Default CheckpointQoS qos = CheckpointQoS.RETRIES_AT_MOST;
+    public static class CheckpointConfig {
+        // TODO custom yaml with tag not support ???
+        //private @Builder.Default CheckpointQoS qos = CheckpointQoS.RETRIES_AT_MOST;
+        private @Builder.Default String qosType = CheckpointQoS.RETRIES_AT_MOST.name();
         private @Builder.Default int qoSMaxRetries = 5;
-        private @Builder.Default Duration qoSMaxRetriesTimeout = Duration.ofHours(6);
+        private @Builder.Default long qoSMaxRetriesTimeout = 1800_000; // 30min
         private @Builder.Default int producerMaxCountLimit = 10;
         private @Builder.Default Properties producerProps = new Properties() {
             {
@@ -421,10 +391,10 @@ public class KafkaSubscriberProperties implements InitializingBean {
         };
 
         public void validate() {
-            Assert2.notNullOf(qos, "qos");
+            Assert2.notNullOf(qosType, "qos");
             Assert2.isTrueOf(qoSMaxRetries > 0, "qosMaxRetries > 0");
             Assert2.isTrueOf(producerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
-            Assert2.isTrueOf(qoSMaxRetriesTimeout.toMillis() > 0, "checkpointTimeoutMs > 0");
+            Assert2.isTrueOf(qoSMaxRetriesTimeout > 0, "checkpointTimeoutMs > 0");
             // check for producer props.
             Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
             Assert2.notNullOf(producerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
@@ -438,7 +408,14 @@ public class KafkaSubscriberProperties implements InitializingBean {
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.CLEANUP_POLICY_CONFIG), "cleanup.policy");
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_MS_CONFIG), "retention.ms");
             Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_BYTES_CONFIG), "retention.bytes");
-            Assert2.notNullOf(defaultTopicProps.get(TopicConfig.DELETE_RETENTION_MS_CONFIG), "delete.retention.ms");
+            //Assert2.notNullOf(defaultTopicProps.get(TopicConfig.DELETE_RETENTION_MS_CONFIG), "delete.retention.ms");
+        }
+
+        public CheckpointQoS getQos() {
+            if (StringUtils.isNumeric(qosType)) {
+                return CheckpointQoS.values()[Integer.parseInt(qosType)];
+            }
+            return CheckpointQoS.valueOf(qosType);
         }
     }
 

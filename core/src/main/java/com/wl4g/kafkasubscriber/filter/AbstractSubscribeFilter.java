@@ -16,29 +16,28 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
+import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
-
-import java.util.List;
-import java.util.function.Function;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
- * The {@link ISubscribeFilter}
+ * The {@link AbstractSubscribeFilter}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeFilter extends Function<FilterBatchMessageDispatcher.SubscriberRecord, Boolean> {
+@Getter
+@Setter
+public abstract class AbstractSubscribeFilter implements ISubscribeFilter {
 
-    String getName();
+    private String name;
+    private SubscribeFilterConfig filterConfig = new SubscribeFilterConfig();
 
-    String getType();
-
-    SubscribeFilterConfig getFilterConfig();
-
-    void validate();
-
-    void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime);
+    @Override
+    public void validate() {
+        Assert2.hasTextOf(name, "name");
+        filterConfig.validate();
+    }
 
 }
