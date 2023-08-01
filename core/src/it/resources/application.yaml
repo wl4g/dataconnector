@@ -45,22 +45,6 @@ management:
 
 kafka-subscriber:
   definitions:
-    ## Notice: The following configuration method is usually used in experimental scenarios to
-    ## define the subscriber list. When integrating into actual business applications, the interface
-    ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
-    subscribers:
-      - id: 1001
-        name: "subscriber_0"
-        enable: true
-        tenantId: "6382bb26e7e81a0047bee709"
-        settings:
-          isSequence: false
-          logRetentionTime: 1d
-          logRetentionSize: 1GB
-          properties:
-            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
-            # Checkpoint backend storage configuration for tenant isolation to which the current subscriber belongs (kafka props configs).
-            6382bb26e7e81a0047bee709: '{"bootstrap.servers":"${IT_KAFKA_SERVERS:localhost:9092}"}'
     bases:
       consumerProps: &baseConsumerProps
         request.timeout.ms: 30000
@@ -71,23 +55,32 @@ kafka-subscriber:
         sequenceExecutorsMaxCountLimit: 100
         sequenceExecutorsPerQueueSize: 100
         executorWarmUp: true
+
     sources:
-      - name: kafka01
-        topicPattern: "test-input"
-        parallelism: 2
-        matchToSubscriberUpdateDelayTime: 3s
-        consumerProps:
-          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "test_shared_source_101"
-          <<: *baseConsumerProps
-      - name: kafka02
-        topicPattern: "test-input"
-        parallelism: 2
-        matchToSubscriberUpdateDelayTime: 3s
-        consumerProps:
-          bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-          group.id: "shared_source_102"
-          <<: *baseConsumerProps
+      - name: defaultStaticSourceProvider # Custom source provider Spring bean name
+        staticConfigs:
+          - name: kafka01
+            topicPattern: "test-input"
+            parallelism: 2
+            matchToSubscriberUpdateDelayTime: 3s
+            consumerProps:
+              bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+              group.id: "test_shared_source_101"
+              <<: *baseConsumerProps
+          - name: kafka02
+            topicPattern: "test-input"
+            parallelism: 2
+            matchToSubscriberUpdateDelayTime: 3s
+            consumerProps:
+              bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
+              group.id: "shared_source_102"
+              <<: *baseConsumerProps
+      #- name: jdbcSourceProvider # The example custom JDBC source provider.
+      #  jdbcUrl:
+      #  username:
+      #  password:
+      #  sql:
+
     filters:
       - name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
         topicPrefix: "test_shared_filtered_"
@@ -113,6 +106,7 @@ kafka-subscriber:
             cleanup.policy: "delete"
             retention.ms: 86400000 # By default: 1day
             retention.bytes: 1073741824 # By default: 1G
+
     sinks:
       - name: defaultSubscribeSink # Custom subscriber sink Spring bean name
         groupIdPrefix: "test_isolation_sink_"
@@ -124,14 +118,26 @@ kafka-subscriber:
           group.id: "test_shared_source_101"
           <<: *baseConsumerProps
 
+    ## Notice: The following configuration method is usually used in experimental scenarios to
+    ## define the subscriber list. When integrating into actual business applications, the interface
+    ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
+    subscribers:
+      - id: s1001
+        name: "subscriber_0"
+        tenantId: "6382bb26e7e81a0047bee709"
+        enable: true
+        settings:
+          isSequence: false
+          logRetentionTime: 1d
+          logRetentionSize: 1GB
+          properties:
+            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+
   pipelines:
     - name: defaultPipeline
       enable: true # By default: true
-      # Required (default: [])
-      sources:
-        #provider: defaultProvider
-        - kafka01
-        #- kafka02
+      # Required (default: null)
+      source: defaultStaticSourceProvider
       # Required (default: defaultSubscribeFilter)
       filter: defaultSubscribeFilter
       # Optional (default: defaultSubscribeSink)

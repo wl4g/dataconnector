@@ -23,6 +23,8 @@ import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
+import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider;
+import com.wl4g.kafkasubscriber.facade.SubscribeSourceProvider.DefaultStaticSourceProvider;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
@@ -49,25 +51,25 @@ public class KafkaSubscriberAutoConfiguration {
 
     @Bean
     @ConfigurationProperties(prefix = "kafka-subscriber")
-    public KafkaSubscriberProperties kafkaSubscriberProperties() {
-        return new KafkaSubscriberProperties();
+    public KafkaSubscriberProperties kafkaSubscriberProperties(ApplicationContext context) {
+        return new KafkaSubscriberProperties(context);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeEngineCustomizer defaultSubscriberEngineCustomizer(KafkaSubscriberProperties config) {
+    public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(KafkaSubscriberProperties config) {
         return new SubscribeEngineCustomizer() {
-            // TODO rename sourceProvider ??
-            @Override
-            public List<KafkaSubscriberProperties.SourceProperties> loadSources(String pipelineName, String sourceProvider) {
-                return config.getDefinitions().getSources();
-            }
-
             @Override
             public List<SubscriberInfo> loadSubscribers(String pipelineName, SubscriberInfo query) {
                 return config.getDefinitions().getSubscribers();
             }
         };
+    }
+
+    @Bean(DefaultStaticSourceProvider.BEAN_NAME)
+    @ConditionalOnMissingBean
+    public SubscribeSourceProvider defaultSubscribeSourceProvider(KafkaSubscriberProperties config) {
+        return new DefaultStaticSourceProvider(config);
     }
 
     @Bean
@@ -78,9 +80,10 @@ public class KafkaSubscriberAutoConfiguration {
     @Bean
     public SubscribeEngineManager kafkaSubscribeManager(ApplicationContext context,
                                                         KafkaSubscriberProperties config,
-                                                        SubscribeEngineCustomizer facade,
+                                                        SubscribeEngineCustomizer customizer,
+                                                        SubscribeSourceProvider sourceProvider,
                                                         CachingSubscriberRegistry registry) {
-        return new SubscribeEngineManager(context, config, facade, registry);
+        return new SubscribeEngineManager(context, config, customizer, sourceProvider, registry);
     }
 
     @Bean
@@ -124,8 +127,4 @@ public class KafkaSubscriberAutoConfiguration {
     }
 
 }
-
-
-
-
 

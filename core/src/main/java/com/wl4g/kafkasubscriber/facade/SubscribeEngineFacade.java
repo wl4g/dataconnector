@@ -17,17 +17,28 @@
 package com.wl4g.kafkasubscriber.facade;
 
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.EnginePipelineProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SinkProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SourceProperties;
+import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
+import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager.SubscribeContainerBootstrap;
+import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager.SubscribePipelineBootstrap;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.util.Map;
 import java.util.Objects;
+
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 
 /**
  * The {@link SubscribeEngineFacade}
@@ -42,34 +53,59 @@ public class SubscribeEngineFacade {
     private final KafkaSubscriberProperties config;
     private final SubscribeEngineManager engineManager;
 
+    public Map<String, SubscribePipelineBootstrap> getPipelineRegistry() {
+        return engineManager.getPipelineRegistry();
+    }
+
+    public SubscribePipelineBootstrap registerPipeline(EnginePipelineProperties pipelineConfig) {
+        return engineManager.registerPipeline(pipelineConfig);
+    }
+
+    public SubscribeContainerBootstrap<FilterBatchMessageDispatcher> registerPipelineFilter(String pipelineName,
+                                                                                            SourceProperties sourceConfig) {
+        return engineManager.registerPipelineFilter(getRequiredPipelineProperties(pipelineName), sourceConfig);
+    }
+
+    public SubscribeContainerBootstrap<SinkBatchMessageDispatcher> registerPipelineSink(String pipelineName,
+                                                                                        SinkProperties sinkConfig,
+                                                                                        SubscriberInfo subscriber) {
+        return engineManager.registerPipelineSink(getRequiredPipelineProperties(pipelineName), sinkConfig, subscriber);
+    }
+
     public @NotNull Map<String, Boolean> startFilters(@NotBlank String pipelineName,
                                                       String... sourceNames) {
-        return getRequiredPipeline(pipelineName).startFilters(sourceNames);
+        return getRequiredPipelineBootstrap(pipelineName).startFilters(sourceNames);
     }
 
     public @NotNull Map<String, Boolean> startSinks(@NotBlank String pipelineName,
                                                     String... pipelineNames) {
-        return getRequiredPipeline(pipelineName).startSinks(pipelineNames);
+        return getRequiredPipelineBootstrap(pipelineName).startSinks(pipelineNames);
     }
 
     public @NotNull Map<String, Boolean> stopFilters(@NotBlank String pipelineName,
                                                      long perFilterTimeout,
                                                      @Null String... sourceNames) {
-        return getRequiredPipeline(pipelineName).stopFilters(perFilterTimeout, sourceNames);
+        return getRequiredPipelineBootstrap(pipelineName).stopFilters(perFilterTimeout, sourceNames);
     }
 
     public @NotNull Map<String, Boolean> stopSinks(@NotBlank String pipelineName,
                                                    long perSinkTimeout,
                                                    @Null String... subscriberIds) {
-        return getRequiredPipeline(pipelineName).stopSinks(perSinkTimeout, subscriberIds);
+        return getRequiredPipelineBootstrap(pipelineName).stopSinks(perSinkTimeout, subscriberIds);
     }
 
-    private SubscribeEngineManager.SubscribePipelineBootstrap getRequiredPipeline(@NotBlank String pipelineName) {
+    private EnginePipelineProperties getRequiredPipelineProperties(String pipelineName) {
+        return safeList(config.getPipelines()).stream()
+                .filter(p -> StringUtils.equals(p.getName(), pipelineName))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(String.format("Not found the pipeline properties of %s", pipelineName)));
+    }
+
+    private SubscribePipelineBootstrap getRequiredPipelineBootstrap(@NotBlank String pipelineName) {
         Assert2.hasTextOf(pipelineName, "pipelineName");
-        final SubscribeEngineManager.SubscribePipelineBootstrap pipeline = engineManager
-                .getPipelineRegistry().get(pipelineName);
+        final SubscribePipelineBootstrap pipeline = getPipelineRegistry().get(pipelineName);
         if (Objects.isNull(pipeline)) {
-            throw new IllegalStateException(String.format("Not found pipeline %s for stop.", pipelineName));
+            throw new IllegalStateException(String.format("Not found the pipeline bootstrap %s for stop.", pipelineName));
         }
         return pipeline;
     }

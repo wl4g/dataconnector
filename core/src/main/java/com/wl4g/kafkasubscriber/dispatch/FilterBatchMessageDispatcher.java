@@ -20,7 +20,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
-import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.EnginePipelineProperties;
+import com.wl4g.kafkasubscriber.config.KafkaSubscriberProperties.SourceProperties;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineCustomizer;
@@ -50,13 +51,27 @@ import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
-import static java.util.Collections.synchronizedList;
 import static java.util.stream.Collectors.toList;
-import static org.apache.kafka.clients.producer.ProducerConfig.*;
+import static org.apache.kafka.clients.producer.ProducerConfig.BOOTSTRAP_SERVERS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
 
 /**
  * The {@link FilterBatchMessageDispatcher}
@@ -67,14 +82,14 @@ import static org.apache.kafka.clients.producer.ProducerConfig.*;
 @Getter
 @Slf4j
 public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
-    private final KafkaSubscriberProperties.SourceProperties sourceConfig;
+    private final SourceProperties sourceConfig;
     private final ISubscribeFilter subscribeFilter;
     private final Map<String, List<Producer<String, String>>> checkpointProducersMap;
     private final Producer<String, String> acknowledgeProducer;
 
     public FilterBatchMessageDispatcher(ApplicationContext context,
-                                        KafkaSubscriberProperties.EnginePipelineProperties pipelineConfig,
-                                        KafkaSubscriberProperties.SourceProperties sourceConfig,
+                                        EnginePipelineProperties pipelineConfig,
+                                        SourceProperties sourceConfig,
                                         SubscribeEngineCustomizer customizer,
                                         CachingSubscriberRegistry registry,
                                         String topicDesc,
@@ -343,28 +358,24 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     // Create the internal filtered checkpoint producers.
     private List<Producer<String, String>> obtainFilteredCheckpointProducers(SubscriberInfo subscriber) {
         final int maxCountLimit = pipelineConfig.getInternalFilter().getCheckpoint().getProducerMaxCountLimit();
-        List<Producer<String, String>> checkpointProducers = checkpointProducersMap.get(subscriber.getTenantId());
-        if (Objects.isNull(checkpointProducers)) {
-            synchronized (this) {
-                if (Objects.isNull(checkpointProducers)) {
-                    log.info("{} :: Creating filtered checkpoint producers...", groupId);
-                    // TODO Merge to tenant producer properties with default configuration???
-                    final Properties producerProps = (Properties) pipelineConfig.getInternalFilter()
-                            .getCheckpoint().getProducerProps().clone();
-                    producerProps.putIfAbsent(BOOTSTRAP_SERVERS_CONFIG, sourceConfig.getConsumerProps().get(BOOTSTRAP_SERVERS_CONFIG));
-                    producerProps.putIfAbsent(KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-                    producerProps.putIfAbsent(VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-                    // Create to filtered checkpoint producers.
-                    final KafkaProducerBuilder builder = new KafkaProducerBuilder(producerProps);
-                    final List<Producer<String, String>> producers = new ArrayList<>(maxCountLimit);
-                    for (int i = 0; i < maxCountLimit; i++) {
-                        producers.add(builder.buildProducer());
-                    }
-                    this.checkpointProducersMap.put(subscriber.getTenantId(), checkpointProducers = synchronizedList(producers));
-                }
+        return checkpointProducersMap.computeIfAbsent(subscriber.getTenantId(), tenantId -> {
+            log.info("{} :: Creating filtered checkpoint producers...", groupId);
+            // TODO Merge to tenant producer properties with default configuration???
+            final Properties producerProps = (Properties) pipelineConfig.getInternalFilter()
+                    .getCheckpoint().getProducerProps().clone();
+            producerProps.put(BOOTSTRAP_SERVERS_CONFIG, sourceConfig.getConsumerProps().get(BOOTSTRAP_SERVERS_CONFIG));
+            producerProps.put(KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            producerProps.put(VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+            // Create to filtered checkpoint producers.
+            final KafkaProducerBuilder builder = new KafkaProducerBuilder(producerProps);
+            final List<Producer<String, String>> producers = new ArrayList<>(maxCountLimit);
+            for (int i = 0; i < maxCountLimit; i++) {
+                producers.add(builder.buildProducer());
             }
-        }
-        return checkpointProducers;
+
+            return producers;
+        });
     }
 
     private Producer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {

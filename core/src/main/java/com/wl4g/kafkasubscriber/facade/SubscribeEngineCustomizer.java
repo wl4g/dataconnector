@@ -43,9 +43,6 @@ import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.K
  **/
 public interface SubscribeEngineCustomizer {
 
-    List<KafkaSubscriberProperties.SourceProperties> loadSources(@NotBlank String pipelineName,
-                                                                 @Null String sourceProvider);
-
     List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
                                          @Null SubscriberInfo query);
 

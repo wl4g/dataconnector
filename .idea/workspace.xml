@@ -5,8 +5,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5e07ed15-2bb7-4be0-904f-2a9624390cff" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/facade/SubscribeSourceProvider.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/it/java/com/wl4g/kafkasubscriber/quickstart/QuickStartApplicationIT.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/it/java/com/wl4g/kafkasubscriber/quickstart/QuickStartApplicationIT.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/it/java/com/wl4g/kafkasubscriber/quickstart/QuickStartTopicInitializer.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/it/java/com/wl4g/kafkasubscriber/quickstart/QuickStartTopicInitializer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/it/resources/application.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/it/resources/application.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/bean/SubscriberInfo.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/bean/SubscriberInfo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/config/KafkaSubscriberAutoConfiguration.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/config/KafkaSubscriberAutoConfiguration.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/config/KafkaSubscriberProperties.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/config/KafkaSubscriberProperties.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/dispatch/FilterBatchMessageDispatcher.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/dispatch/FilterBatchMessageDispatcher.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/dispatch/SubscribeEngineManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/dispatch/SubscribeEngineManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/facade/SubscribeEngineCustomizer.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/facade/SubscribeEngineCustomizer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/facade/SubscribeEngineFacade.java" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/facade/SubscribeEngineFacade.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -93,26 +102,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;ToolWindowBuild.ShowToolbar&quot;: &quot;false&quot;,
-    &quot;deletionFromPopupRequiresConfirmation&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.159375&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.20837696&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.keymap&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ToolWindowBuild.ShowToolbar": "false",
+    "deletionFromPopupRequiresConfirmation": "false",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker",
+    "project.structure.last.edited": "Modules",
+    "project.structure.proportion": "0.159375",
+    "project.structure.side.proportion": "0.20837696",
+    "settings.editor.selected.configurable": "preferences.sourceCode.Java"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/.backup/.springkafkaembeddedbroker" />
       <recent name="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/core/src/test/resources" />
+    </key>
+    <key name="CopyClassDialog.RECENTS_KEY">
+      <recent name="com.wl4g.kafkasubscriber.facade" />
     </key>
   </component>
   <component name="RunManager" selected="Application.QuickStartApplicationIT_with_rcdev">
@@ -137,18 +149,10 @@
     <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
   </component>
   <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="java-line">
-          <url>file://$PROJECT_DIR$/core/src/main/java/com/wl4g/kafkasubscriber/dispatch/SubscribeEngineManager.java</url>
-          <line>101</line>
-          <option name="timeStamp" value="100" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
     <pin-to-top-manager>
       <pinned-members>
         <PinnedItemInfo parentTag="org.springframework.boot.context.properties.bind.Binder$Context" memberName="depth" />
+        <PinnedItemInfo parentTag="java.lang.String" memberName="value" />
         <PinnedItemInfo parentTag="org.springframework.boot.context.properties.bind.Binder$Context" memberName="source" />
         <PinnedItemInfo parentTag="java.util.concurrent.ExecutionException" memberName="detailMessage" />
       </pinned-members>

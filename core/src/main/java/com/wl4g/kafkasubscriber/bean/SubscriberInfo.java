@@ -17,7 +17,11 @@
 package com.wl4g.kafkasubscriber.bean;
 
 import com.wl4g.infra.common.lang.Assert2;
-import lombok.*;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.springframework.util.unit.DataSize;
 
@@ -45,6 +49,7 @@ public class SubscriberInfo {
     public void validate() {
         Assert2.notNullOf(id, "id");
         Assert2.hasTextOf(name, "name");
+        Assert2.hasTextOf(tenantId, "tenantId");
         Assert2.notNullOf(enable, "enable");
         Assert2.notNullOf(settings, "settings");
         this.settings.validate();
