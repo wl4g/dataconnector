@@ -19,8 +19,9 @@ package com.wl4g.kafkasubscriber.custom;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -47,11 +48,16 @@ public interface SubscribeEngineCustomizer {
     List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
                                          @Null SubscriberInfo query);
 
+    SubscribeSourceConfig loadSourceByTenant(@NotBlank String pipelineName,
+                                             @NotBlank String tenantId);
+
     default boolean matchSubscriberRecord(@NotBlank String pipelineName,
                                           @NotNull SubscriberInfo subscriber,
                                           @NotNull ConsumerRecord<String, ObjectNode> record) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
         Assert2.notNullOf(subscriber, "subscriber");
         Assert2.notNullOf(record, "record");
+
         // Notice: By default, the $subscriberId field of the source message match, which should be customized
         // to match the subscriber relationship corresponding to each record in the source consume topic.
         if (Objects.nonNull(record.value())) {
@@ -73,8 +79,10 @@ public interface SubscribeEngineCustomizer {
     default String generateCheckpointTopic(@NotBlank String pipelineName,
                                            @NotBlank String topicPrefix,
                                            @NotBlank String subscriberId) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
         Assert2.hasTextOf(topicPrefix, "topicPrefix");
         Assert2.hasTextOf(subscriberId, "subscriberId");
+
         if (!StringUtils.endsWithAny(topicPrefix, "-", "_")) {
             topicPrefix += "_";
         }
@@ -84,6 +92,8 @@ public interface SubscribeEngineCustomizer {
     default String generateSinkGroupId(@NotBlank String pipelineName,
                                        @Null KafkaSubscribeConfiguration.SubscribeSinkConfig subscribeSinkConfig,
                                        @Null String subscriberId) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
+
         String groupIdPrefix = subscribeSinkConfig.getGroupIdPrefix();
         if (!StringUtils.endsWithAny(groupIdPrefix, "-", "_")) {
             groupIdPrefix += "_";

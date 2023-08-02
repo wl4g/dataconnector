@@ -18,12 +18,22 @@
 package com.wl4g.kafkasubscriber.util;
 
 import com.wl4g.infra.common.lang.Assert2;
-import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ConsumerGroupDescription;
+import org.apache.kafka.clients.admin.DescribeConsumerGroupsOptions;
+import org.apache.kafka.clients.admin.DescribeConsumerGroupsResult;
+import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
 import javax.validation.constraints.NotBlank;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -57,14 +67,18 @@ public abstract class KafkaUtil {
         return null;
     }
 
-    public static Collection<MemberDescription> getGroupConsumers(@NotBlank String bootstrapServers,
-                                                                  @NotBlank String groupId,
-                                                                  long timeout) throws ExecutionException, InterruptedException, TimeoutException {
+    public static Collection<MemberDescription> getGroupConsumers(
+            @NotBlank String bootstrapServers,
+            @NotBlank String groupId,
+            long timeout)
+            throws ExecutionException, InterruptedException, TimeoutException {
         Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
         Assert2.hasTextOf(groupId, "groupId");
 
-        Properties properties = new Properties();
+        final Properties properties = new Properties();
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 60_000);
+        properties.put(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, 10_000);
 
         try (AdminClient adminClient = AdminClient.create(properties)) {
             DescribeConsumerGroupsOptions describeOptions = new DescribeConsumerGroupsOptions()

@@ -18,6 +18,7 @@ package com.wl4g.kafkasubscriber.config;
 
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
+import com.wl4g.kafkasubscriber.custom.DefaultSubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
@@ -30,8 +31,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.util.List;
 
 /**
  * The {@link KafkaSubscribeAutoConfiguration}
@@ -51,12 +50,7 @@ public class KafkaSubscribeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(KafkaSubscribeConfiguration config) {
-        return new SubscribeEngineCustomizer() {
-            @Override
-            public List<SubscriberInfo> loadSubscribers(String pipelineName, SubscriberInfo query) {
-                return config.getDefinitions().getSubscribers();
-            }
-        };
+        return new DefaultSubscribeEngineCustomizer(config);
     }
 
     @Bean
@@ -65,11 +59,11 @@ public class KafkaSubscribeAutoConfiguration {
     }
 
     @Bean
-    public SubscribeEngineManager kafkaSubscribeManager(ApplicationContext context,
-                                                        KafkaSubscribeConfiguration config,
+    public SubscribeEngineManager kafkaSubscribeManager(KafkaSubscribeConfiguration config,
                                                         SubscribeEngineCustomizer customizer,
+                                                        CheckpointTopicManager topicManager,
                                                         CachingSubscriberRegistry registry) {
-        return new SubscribeEngineManager(context, config, customizer, registry);
+        return new SubscribeEngineManager(config, topicManager, customizer, registry);
     }
 
     @Bean

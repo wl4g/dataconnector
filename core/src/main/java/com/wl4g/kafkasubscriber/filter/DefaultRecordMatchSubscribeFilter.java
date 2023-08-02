@@ -16,12 +16,13 @@
 
 package com.wl4g.kafkasubscriber.filter;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.serialize.JacksonUtils;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
-import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.util.List;
 import java.util.Objects;
@@ -51,13 +52,14 @@ public class DefaultRecordMatchSubscribeFilter extends AbstractSubscribeFilter {
     }
 
     @Override
-    public Boolean apply(FilterBatchMessageDispatcher.SubscriberRecord record) {
+    public boolean doMatch(SubscriberInfo subscriber,
+                           ConsumerRecord<String, ObjectNode> record) {
         if (Objects.isNull(operator)) {
-            log.warn("- :: {} :: The configuration of the default record matching operator has not been injected!!! " +
-                    "Please check if it is config item correctly at filterProps.{}", record.getSubscriber().getId(), TYPE_NAME);
+            log.warn("{} :: {} :: The configuration of the default record matching operator has not been injected!!! " +
+                    "Please check if it is config item correctly at filterProps.", getName(), subscriber.getId());
             return false;
         }
-        return operator.apply(record.getRecord().value());
+        return operator.apply(record.value());
     }
 
     @Override

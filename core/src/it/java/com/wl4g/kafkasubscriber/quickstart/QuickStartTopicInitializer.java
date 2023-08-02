@@ -129,7 +129,7 @@ public class QuickStartTopicInitializer {
                     while (++j <= recordsPerExecutor) {
                         String key = String.format("test-key-%s-%s", _i, counter.incrementAndGet());
                         String value = String.format("{\"cts\":%s,\"__properties__\":{\"__online__\":{\"connected\":true," +
-                                        "\"directlyLinked\":true,\"seq\":\"%s-%s\"}},\"%s\":\"s1001\"}",
+                                        "\"directlyLinked\":true,\"seq\":\"%s0000%s\"}},\"%s\":\"s1001\"}",
                                 System.currentTimeMillis(), _i, counter.get(), FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID);
                         System.out.printf("Send to topic: %s, key: %s, value: %s%n", testInputTopic, key, value);
                         Future<RecordMetadata> future = producer.send(new ProducerRecord<>("test-input", key, value));

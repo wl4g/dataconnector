@@ -16,27 +16,26 @@
 
 package com.wl4g.kafkasubscriber.dispatch;
 
-import com.wl4g.infra.common.collection.CollectionUtils2;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaConsumerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.BaseConsumerConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.Metric;
+import org.apache.kafka.common.MetricName;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.ApplicationContext;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 
 import javax.validation.constraints.NotNull;
@@ -51,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static com.wl4g.infra.common.collection.CollectionUtils2.isEmptyArray;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
@@ -58,6 +58,7 @@ import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.Subscr
 import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableMap;
+import static org.apache.commons.lang3.StringUtils.equalsAny;
 
 /**
  * The {@link SubscribeEngineManager}
@@ -69,18 +70,18 @@ import static java.util.Collections.unmodifiableMap;
 public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final ApplicationContext context;
     private final KafkaSubscribeConfiguration config;
+    private final CheckpointTopicManager topicManager;
     private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
     private final Map<String, SubscribePipelineBootstrap> pipelineRegistry;
 
-    public SubscribeEngineManager(@NotNull ApplicationContext context,
-                                  @NotNull KafkaSubscribeConfiguration config,
+    public SubscribeEngineManager(@NotNull KafkaSubscribeConfiguration config,
+                                  @NotNull CheckpointTopicManager topicManager,
                                   @NotNull SubscribeEngineCustomizer customizer,
                                   @NotNull CachingSubscriberRegistry registry) {
-        this.context = notNullOf(context, "context");
         this.config = notNullOf(config, "config");
+        this.topicManager = notNullOf(topicManager, "topicManager");
         this.customizer = notNullOf(customizer, "customizer");
         this.registry = notNullOf(registry, "registry");
         this.pipelineRegistry = new ConcurrentHashMap<>(config.getPipelines().size());
@@ -113,22 +114,26 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
             log.warn("Already started, ignore again.");
             return;
         }
+//        topicManager.initPipelinesTopicIfNecessary(15_000);
         registerAllPipelines();
         startAllPipelines();
     }
 
     private void registerAllPipelines() {
+        log.info("Registering to all pipelines ...");
         safeList(config.getPipelines()).forEach(this::registerPipeline);
 
         log.info("---------------- ::: [Begin] Registered all pipeline subscribers details ::: ----------------");
         safeMap(pipelineRegistry)
                 .forEach((pipelineName, pipelineBootstrap) -> {
-                    safeMap(pipelineBootstrap.getFilterBootstraps()) // source=>bootstrap
+                    // source=>bootstrap
+                    safeMap(pipelineBootstrap.getFilterBootstraps())
                             .forEach((sourceName, value) -> log.info("Registered filter subscribe bootstrap of pipeline: {}, source: {}, topic: {}, groupId: {}",
                                     pipelineName, value.getDispatcher().getSubscribeSourceConfig().getName(),
                                     value.getDispatcher().getTopicDesc(),
                                     value.getDispatcher().getGroupId()));
-                    safeMap(pipelineBootstrap.getSinkBootstraps()) // subscriberId=>bootstrap
+                    // subscriberId=>bootstrap
+                    safeMap(pipelineBootstrap.getSinkBootstraps())
                             .forEach((subscriberId, value) -> log.info("Registered sink subscribe bootstrap of pipeline: {}, subscriber: {}, topic: {}, groupId: {}",
                                     pipelineName, value.getDispatcher().getSubscriber().getId(),
                                     value.getDispatcher().getTopicDesc(),
@@ -138,10 +143,10 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
     }
 
     private void startAllPipelines() {
-        log.info("Starting all pipeline filter subscribers for {}...", pipelineRegistry.size());
+        log.info("Starting to all pipelines filter subscribers for {}...", pipelineRegistry.size());
         pipelineRegistry.values().forEach(SubscribePipelineBootstrap::startFilters);
 
-        log.info("Starting all pipeline sink subscribers for {}...", pipelineRegistry.size());
+        log.info("Starting to all pipelines sink subscribers for {}...", pipelineRegistry.size());
         pipelineRegistry.values().forEach(SubscribePipelineBootstrap::startSinks);
     }
 
@@ -171,9 +176,10 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
             final Map<String, SubscribeContainerBootstrap<FilterBatchMessageDispatcher>> filterBootstraps =
                     safeList(pipelineConfig.getParsedSourceProvider().loadSources(pipelineName))
                             .stream()
+                            .map(SubscribeSourceConfig::optimizeProperties)
                             .collect(Collectors.toMap(
                                     BaseConsumerConfig::getName,
-                                    source -> registerPipelineFilter(pipelineConfig, source)));
+                                    source -> registerPipelineFilter(pipelineConfig, (SubscribeSourceConfig) source)));
 
             Map<String, SubscribeContainerBootstrap<SinkBatchMessageDispatcher>> sinkBootstraps = emptyMap();
             // Register sink config If necessary. (per subscriber a sink dispatcher instance)
@@ -183,7 +189,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                         pipelineConfig);
             } else {
                 // Build sink dispatchers.
-                sinkBootstraps = safeList(registry.getShardingAll())
+                sinkBootstraps = safeList(registry.getCurrentShardingAll())
                         .stream()
                         .collect(Collectors.toMap(
                                 SubscriberInfo::getId,
@@ -210,7 +216,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         // Build filter dispatcher.
         final FilterBatchMessageDispatcher dispatcher = new FilterBatchMessageDispatcher(
-                pipelineConfig, subscribeSourceConfig, customizer, registry,
+                config, pipelineConfig, subscribeSourceConfig, customizer, registry,
                 subscribeSourceConfig.getTopicPattern(),
                 subscribeSourceConfig.getGroupId(), pipelineConfig.getParsedFilter(), acknowledgeProducer);
 
@@ -230,7 +236,8 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
         subscriber.validate();
 
         final SubscribeFilterConfig filterConfig = pipelineConfig.getParsedFilter().getFilterConfig();
-        final SubscribeSinkConfig sinkConfig = pipelineConfig.getParsedSink().getSinkConfig();
+        final SubscribeSinkConfig sinkConfig = (SubscribeSinkConfig) pipelineConfig.getParsedSink()
+                .getSinkConfig().optimizeProperties();
 
         final String sinkFromTopic = customizer.generateCheckpointTopic(pipelineConfig.getName(),
                 filterConfig.getTopicPrefix(), subscriber.getId());
@@ -238,7 +245,8 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         // Build sink dispatcher.
         final SinkBatchMessageDispatcher dispatcher = new SinkBatchMessageDispatcher(
-                pipelineConfig, customizer, registry, sinkFromTopic, sinkGroupId, subscriber, pipelineConfig.getParsedSink());
+                config, pipelineConfig, customizer, registry, sinkFromTopic, sinkGroupId,
+                subscriber, pipelineConfig.getParsedSink());
 
         return new SubscribeContainerBootstrap<>(dispatcher,
                 new KafkaConsumerBuilder(sinkConfig.getConsumerProps())
@@ -256,7 +264,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         public Map<String, Boolean> startFilters(String... sourceNames) {
             return safeMap(filterBootstraps).entrySet().stream()
-                    .filter(e -> CollectionUtils2.isEmptyArray(sourceNames) || StringUtils.equalsAny(e.getKey(), sourceNames))
+                    .filter(e -> isEmptyArray(sourceNames) || equalsAny(e.getKey(), sourceNames))
                     .collect(Collectors.toMap(
                             entry -> {
                                 try {
@@ -287,7 +295,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         public Map<String, Boolean> startSinks(String... subscriberIds) {
             return safeMap(sinkBootstraps).entrySet().stream()
-                    .filter(e -> CollectionUtils2.isEmptyArray(subscriberIds) || StringUtils.equalsAny(e.getKey(), subscriberIds))
+                    .filter(e -> isEmptyArray(subscriberIds) || equalsAny(e.getKey(), subscriberIds))
                     .collect(Collectors.toMap(entry -> {
                         try {
                             final SubscribeContainerBootstrap<SinkBatchMessageDispatcher> bootstrap = entry.getValue();
@@ -315,19 +323,20 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
         public Map<String, Boolean> stopFilters(long perFilterTimeout, String... sourceNames) {
             // Stopping filter.
             final Map<String, Boolean> result = safeMap(filterBootstraps).entrySet().stream()
-                    .filter(e -> CollectionUtils2.isEmptyArray(sourceNames) || StringUtils.equalsAny(e.getKey(), sourceNames))
+                    .filter(e -> isEmptyArray(sourceNames) || equalsAny(e.getKey(), sourceNames))
                     .collect(Collectors.toMap(
-                            entry -> entry.getValue().getDispatcher().getSubscribeSourceConfig().getName(),
+                            //entry -> entry.getValue().getDispatcher().getSubscribeSourceConfig().getName(),
+                            Entry::getKey,
                             entry -> {
                                 final SubscribeContainerBootstrap<FilterBatchMessageDispatcher> bootstrap = entry.getValue();
                                 final String sourceName = bootstrap.getDispatcher().getSubscribeSourceConfig().getName();
                                 try {
-                                    log.info("Stopping subscribe for source: {}", sourceName);
+                                    log.info("Stopping filter subscribe for source: {}", sourceName);
                                     final boolean r = bootstrap.stop(perFilterTimeout);
-                                    log.info("Stopped subscribe for source: {}", sourceName);
+                                    log.info("Stopped filter subscribe for source: {}", sourceName);
                                     return r;
                                 } catch (Throwable ex) {
-                                    log.error("Failed to stop subscribe for source: {}", sourceName, ex);
+                                    log.error("Failed to stop subscribe filter for source: {}", sourceName, ex);
                                     return bootstrap.getContainer().isRunning();
                                 }
                             }));
@@ -347,19 +356,20 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
         public Map<String, Boolean> stopSinks(long perSinkTimeout, String... subscriberIds) {
             // Stopping sink.
             final Map<String, Boolean> result = safeMap(sinkBootstraps).entrySet().stream()
-                    .filter(e -> CollectionUtils2.isEmptyArray(subscriberIds) || StringUtils.equalsAny(e.getKey(), subscriberIds))
+                    .filter(e -> isEmptyArray(subscriberIds) || equalsAny(e.getKey(), subscriberIds))
                     .collect(Collectors.toMap(
-                            entry -> entry.getValue().getDispatcher().getSubscriber().getId(),
+                            //entry -> entry.getValue().getDispatcher().getSubscriber().getId(),
+                            Entry::getKey,
                             entry -> {
                                 final SubscribeContainerBootstrap<SinkBatchMessageDispatcher> bootstrap = entry.getValue();
                                 final String subscriberId = bootstrap.getDispatcher().getSubscriber().getId();
                                 try {
-                                    log.info("Stopping sink for subscriber id: {}", subscriberId);
+                                    log.info("Stopping sink subscribe for id: {}", subscriberId);
                                     final boolean r = bootstrap.stop(perSinkTimeout);
-                                    log.info("Stopped sink for subscriber id: {}", subscriberId);
+                                    log.info("Stopped sink subscribe for id: {}", subscriberId);
                                     return r;
                                 } catch (Throwable ex) {
-                                    log.error("Failed to stop sink subscriber id: {}", subscriberId, ex);
+                                    log.error("Failed to stop sink subscribe id: {}", subscriberId, ex);
                                     return bootstrap.getContainer().isRunning();
                                 }
                             }));
@@ -375,6 +385,66 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
             return result;
         }
+
+        public Map<String, ContainerStatus> statusFilters(String... sourceNames) {
+            return safeMap(filterBootstraps).entrySet().stream()
+                    .filter(e -> isEmptyArray(sourceNames) || equalsAny(e.getKey(), sourceNames))
+                    .collect(Collectors.toMap(Entry::getKey, entry -> new ContainerStatus(entry.getValue().getContainer().isRunning(),
+                            entry.getValue().getContainer().getContainers().size())));
+        }
+
+        public Map<String, ContainerStatus> statusSinks(String... subscriberIds) {
+            return safeMap(sinkBootstraps).entrySet().stream()
+                    .filter(e -> isEmptyArray(subscriberIds) || equalsAny(e.getKey(), subscriberIds))
+                    .collect(Collectors.toMap(Entry::getKey,
+                            entry -> new ContainerStatus(entry.getValue().getContainer().isRunning(),
+                                    entry.getValue().getContainer().getContainers().size())));
+        }
+
+        public Map<String, Integer> scalingFilters(int perConcurrency,
+                                                   boolean restart,
+                                                   long perRestartTimeout,
+                                                   String... sourceNames) {
+            return safeMap(filterBootstraps).entrySet().stream()
+                    .filter(e -> isEmptyArray(sourceNames) || equalsAny(e.getKey(), sourceNames))
+                    .collect(Collectors.toMap(
+                            Entry::getKey,
+                            entry -> {
+                                final SubscribeContainerBootstrap<FilterBatchMessageDispatcher> bootstrap = entry.getValue();
+                                final String sourceName = bootstrap.getDispatcher().getSubscribeSourceConfig().getName();
+                                try {
+                                    log.info("Scaling filter subscribe for source: {}", sourceName);
+                                    bootstrap.scaling(perConcurrency, restart, perRestartTimeout);
+                                    log.info("Scaled filter subscribe for source: {}", sourceName);
+                                } catch (Throwable ex) {
+                                    log.error("Failed to stop filter subscribe for source: {}", sourceName, ex);
+                                }
+                                return bootstrap.getContainer().getContainers().size();
+                            }));
+        }
+
+        public Map<String, Integer> scalingSinks(int perConcurrency,
+                                                 boolean restart,
+                                                 long perRestartTimeout,
+                                                 String... subscriberIds) {
+            return safeMap(sinkBootstraps).entrySet().stream()
+                    .filter(e -> isEmptyArray(subscriberIds) || equalsAny(e.getKey(), subscriberIds))
+                    .collect(Collectors.toMap(
+                            Entry::getKey,
+                            entry -> {
+                                final SubscribeContainerBootstrap<SinkBatchMessageDispatcher> bootstrap = entry.getValue();
+                                final String subscriberId = bootstrap.getDispatcher().getSubscriber().getId();
+                                try {
+                                    log.info("Scaling sink subscribe for id: {}", subscriberId);
+                                    bootstrap.scaling(perConcurrency, restart, perRestartTimeout);
+                                    log.info("Scaled sink subscribe for id: {}", subscriberId);
+                                } catch (Throwable ex) {
+                                    log.error("Failed to scaling sink subscribe id: {}", subscriberId, ex);
+                                }
+                                return bootstrap.getContainer().getContainers().size();
+                            }));
+        }
+
     }
 
     @Getter
@@ -409,10 +479,49 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
             return container.isRunning();
         }
 
+        public boolean scaling(int concurrency,
+                               boolean restart,
+                               long restartTimeout) throws InterruptedException {
+            container.setConcurrency(concurrency);
+            if (restart) {
+                if (stop(restartTimeout)) {
+                    start();
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            // It is bound not to immediately scale the number of concurrent containers.
+            return false;
+        }
+
+        public void pause() {
+            container.pause();
+        }
+
+        public void resume() {
+            container.resume();
+        }
+
         public boolean isRunning() {
             return container.isRunning();
         }
 
+        public boolean isHealthy() {
+            return container.isInExpectedState();
+        }
+
+        public Map<String, Map<MetricName, ? extends Metric>> metrics() {
+            return container.metrics();
+        }
+
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class ContainerStatus {
+        private boolean running;
+        private int actuateConcurrency;
     }
 
 }

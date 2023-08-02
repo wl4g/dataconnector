@@ -52,13 +52,13 @@ kafka-subscriber:
       executorProps: &baseExecutorProps
         sharedExecutorThreadPoolSize: 50
         sharedExecutorQueueSize: 500
-        sequenceExecutorsMaxCountLimit: 100
+        sequenceExecutorsMaxCountLimit: 10
         sequenceExecutorsPerQueueSize: 100
         executorWarmUp: true
 
     sources:
       - !STATIC
-        name: defaultStaticSourceProvider # Custom source provider Spring bean name
+        name: defaultStaticSourceProvider # Custom source provider bean name
         staticConfigs:
           - name: kafka01
             topicPattern: "test-input"
@@ -74,7 +74,7 @@ kafka-subscriber:
             matchToSubscriberUpdateDelayTime: 3
             consumerProps:
               bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-              group.id: "shared_source_102"
+              group.id: "test_shared_source_102"
               <<: *baseConsumerProps
       #- !JDBC
       #  name: jdbcSourceProvider # The example custom JDBC source provider.
@@ -86,7 +86,7 @@ kafka-subscriber:
 
     filters:
       - !EXPRESSION_MATCH
-        name: defaultSubscribeFilter # Custom subscriber filter Spring bean name
+        name: defaultSubscribeFilter # Custom subscribe filter bean name
         filterConfig:
           topicPrefix: "test_shared_filtered_"
           topicPartitions: 10
@@ -100,7 +100,7 @@ kafka-subscriber:
             qoSMaxRetriesTimeout: 1800000 # 30min
             producerMaxCountLimit: 100
             producerProps:
-              bootstrap.servers: "localhost:9092" # By default: {.source.bootstrapServers}
+              #bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092} # By default: {.source.consumerProps.'bootstrap.servers'}
               acks: "0"
               request.timeout.ms: 30000
               max.request.size: 1048576
@@ -115,7 +115,7 @@ kafka-subscriber:
 
     sinks:
       - !PRINT
-        name: defaultSubscribeSink # Custom subscriber sink Spring bean name
+        name: defaultSubscribeSink # Custom subscribe sink bean name
         sinkConfig:
           groupIdPrefix: "test_isolation_sink_"
           parallelism: 2
@@ -131,8 +131,28 @@ kafka-subscriber:
     ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
     subscribers:
       - id: s1001
-        name: "subscriber_0"
-        tenantId: "6382bb26e7e81a0047bee709"
+        name: "subscriber_1"
+        tenantId: t1001
+        enable: true
+        settings:
+          isSequence: false
+          logRetentionTime: 1d
+          logRetentionSize: 1GB
+          properties:
+            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+      - id: s1002
+        name: "subscriber_2"
+        tenantId: t1002
+        enable: true
+        settings:
+          isSequence: false
+          logRetentionTime: 1d
+          logRetentionSize: 1GB
+          properties:
+            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+      - id: s1003
+        name: "subscriber_3"
+        tenantId: t1003
         enable: true
         settings:
           isSequence: false
@@ -141,12 +161,26 @@ kafka-subscriber:
           properties:
             defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
 
+    tenants:
+      - id: t1001
+        name: "tenant_1"
+        sourceName: kafka01
+        enable: true
+        properties: {}
+      - id: t1002
+        name: "tenant_2"
+        sourceName: kafka01
+        enable: true
+        properties: {}
+      - id: t1003
+        name: "tenant_3"
+        sourceName: kafka03
+        enable: true
+        properties: {}
+
   pipelines:
     - name: defaultPipeline
       enable: true # By default: true
-      # Required (default: null)
       source: defaultStaticSourceProvider
-      # Required (default: defaultSubscribeFilter)
       filter: defaultSubscribeFilter
-      # Optional (default: defaultSubscribeSink)
       sink: defaultSubscribeSink

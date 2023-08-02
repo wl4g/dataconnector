@@ -18,6 +18,7 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeExecutorConfig;
@@ -62,6 +63,7 @@ import static java.util.Collections.synchronizedList;
 public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
+    protected final KafkaSubscribeConfiguration config;
     protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
@@ -70,11 +72,13 @@ public abstract class AbstractBatchMessageDispatcher
     protected final String topicDesc;
     protected final String groupId;
 
-    public AbstractBatchMessageDispatcher(SubscribeEnginePipelineConfig pipelineConfig,
+    public AbstractBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+                                          SubscribeEnginePipelineConfig pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
                                           String topicDesc,
                                           String groupId) {
+        this.config = Assert2.notNullOf(config, "config");
         this.pipelineConfig = Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = Assert2.notNullOf(registry, "registry");

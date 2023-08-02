@@ -18,7 +18,7 @@
 package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import lombok.Getter;
@@ -50,7 +50,7 @@ public class CachingSubscriberRegistry {
         return registry.get(id);
     }
 
-    public Collection<SubscriberInfo> getShardingAll() {
+    public Collection<SubscriberInfo> getCurrentShardingAll() {
         // TODO
 //        return registry.values();
         return customizer.loadSubscribers("", new SubscriberInfo());

@@ -15,22 +15,20 @@
  *
  */
 
-package com.wl4g.kafkasubscriber.config;
+package com.wl4g.kafkasubscriber.bean;
 
 import com.wl4g.infra.common.lang.Assert2;
-import lombok.Builder;
+import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
-import org.springframework.util.unit.DataSize;
 
-import java.time.Duration;
 import java.util.Properties;
 
 /**
- * The {@link SubscriberInfo}
+ * The {@link TenantInfo}
  *
  * @author James Wong
  * @since v1.0
@@ -40,37 +38,17 @@ import java.util.Properties;
 @SuperBuilder
 @ToString(callSuper = true)
 @NoArgsConstructor
-public class SubscriberInfo {
+public class TenantInfo {
     private String id;
     private String name;
-    private String tenantId;
-    private Boolean enable;
-    private @Builder.Default SubscribeSettings settings = new SubscribeSettings();
+    private @Default boolean enable = true;
+    private String sourceName;
+    private Properties properties;
 
     public void validate() {
         Assert2.notNullOf(id, "id");
         Assert2.hasTextOf(name, "name");
-        Assert2.hasTextOf(tenantId, "tenantId");
-        Assert2.notNullOf(enable, "enable");
-        Assert2.notNullOf(settings, "settings");
-        this.settings.validate();
-    }
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString(callSuper = true)
-    @NoArgsConstructor
-    public static class SubscribeSettings {
-        private @Builder.Default Boolean isSequence = false;
-        private @Builder.Default Duration logRetentionTime = Duration.ofDays(3);
-        private @Builder.Default DataSize logRetentionBytes = DataSize.ofMegabytes(512);
-        private @Builder.Default Properties properties = new Properties();
-
-        public void validate() {
-            Assert2.notNullOf(isSequence, "isSequence");
-            Assert2.notNullOf(properties, "properties");
-        }
+        Assert2.hasTextOf(sourceName, "sourceName");
     }
 
 }

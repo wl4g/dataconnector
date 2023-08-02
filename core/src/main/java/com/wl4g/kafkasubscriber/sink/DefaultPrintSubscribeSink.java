@@ -17,10 +17,11 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+import java.io.Serializable;
+import java.util.concurrent.Future;
 
 /**
  * The {@link DefaultPrintSubscribeSink}
@@ -39,12 +40,12 @@ public class DefaultPrintSubscribeSink extends AbstractSubscribeSink {
     }
 
     @Override
-    public SinkBatchMessageDispatcher.SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                                           String subscriberId,
-                                                           boolean sequence,
-                                                           ConsumerRecord<String, ObjectNode> record) {
-        log.info("----- This is a default printer sink, and you should customize the implementation of sink logic ! -----\n{}", record);
-        return SinkBatchMessageDispatcher.SinkCompleted.EMPTY;
+    public Future<? extends Serializable> doSink(String subscriberId,
+                                                 boolean sequence,
+                                                 ConsumerRecord<String, ObjectNode> record) {
+        log.info("----- This is a default printer sink, and you should customize " +
+                "the implementation of sink logic ! -----\nsubscriberId: {}\nrecord: {}", subscriberId, record);
+        return super.doSink(subscriberId, sequence, record);
     }
 
 }

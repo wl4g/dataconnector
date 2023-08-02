@@ -17,7 +17,7 @@
 
 package com.wl4g.kafkasubscriber.coordinator;
 
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +40,7 @@ public abstract class ShardingSubscriberCoordinator {
     protected void onReBalancing(ShardingInfo sharding) {
         log.info("Re-balancing of sharding: {} ...", sharding);
 
-        final List<SubscriberInfo> rebalancedSubscribers = registry.getShardingAll().stream()
+        final List<SubscriberInfo> rebalancedSubscribers = registry.getCurrentShardingAll().stream()
                 .filter(s -> sharding.getTotal() % Crc32Util.compute(s.getId()) == sharding.getItem()).collect(Collectors.toList());
 
         log.info("Re-balanced of sharding: {}, {}, subscribers: {}", sharding,

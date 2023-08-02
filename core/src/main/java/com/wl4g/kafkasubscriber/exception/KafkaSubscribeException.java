@@ -17,25 +17,25 @@
 package com.wl4g.kafkasubscriber.exception;
 
 /**
- * The {@link GiveUpRetryExecutionException}
+ * The {@link KafkaSubscribeException}
  *
  * @author James Wong
  * @since v1.0
  **/
-public class GiveUpRetryExecutionException extends KafkaSubscribeException {
+public class KafkaSubscribeException extends RuntimeException {
 
-    protected GiveUpRetryExecutionException() {
+    public KafkaSubscribeException() {
     }
 
-    protected GiveUpRetryExecutionException(String message) {
+    public KafkaSubscribeException(String message) {
         super(message);
     }
 
-    public GiveUpRetryExecutionException(String message, Throwable cause) {
+    public KafkaSubscribeException(String message, Throwable cause) {
         super(message, cause);
     }
 
-    public GiveUpRetryExecutionException(Throwable cause) {
+    public KafkaSubscribeException(Throwable cause) {
         super(cause);
     }
 

@@ -18,11 +18,12 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
+import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
@@ -38,12 +39,16 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.kafka.support.Acknowledgment;
 
+import java.io.Serializable;
 import java.time.Duration;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
@@ -61,14 +66,15 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final SubscriberInfo subscriber;
     private final ISubscribeSink subscribeSink;
 
-    public SinkBatchMessageDispatcher(SubscribeEnginePipelineConfig config,
+    public SinkBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+                                      SubscribeEnginePipelineConfig pipelineConfig,
                                       SubscribeEngineCustomizer customizer,
                                       CachingSubscriberRegistry registry,
                                       String topicDesc,
                                       String groupId,
                                       SubscriberInfo subscriber,
                                       ISubscribeSink sink) {
-        super(config, customizer, registry, topicDesc, groupId);
+        super(config, pipelineConfig, customizer, registry, topicDesc, groupId);
         this.subscribeSink = Assert2.notNullOf(sink, "sink");
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
     }
@@ -76,8 +82,10 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     @Override
     public void doOnMessage(List<ConsumerRecord<String, ObjectNode>> filteredRecords, Acknowledgment ack) {
         // Sink from filtered records (per subscriber a topic).
-        final List<SinkResult> sinkResults = safeList(filteredRecords).stream()
-                .map(fr -> doSinkAsync(fr, System.nanoTime(), 0)).collect(toList());
+        final List<SinkResult> sinkResults = safeList(filteredRecords)
+                .stream()
+                .map(fr -> doSinkAsync(fr, System.nanoTime(), 0))
+                .collect(toList());
 
         // Add timing sink metrics. (The benefit of not using lamda records is better use of arthas for troubleshooting during operation.)
         final Timer sinkTimer = addTimerMetrics(SubscribeMeter.MetricsName.sink_time, topicDesc,
@@ -94,7 +102,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                     final SinkResult sr = it.next();
                     // Notice: is done is not necessarily successful, both exception and cancellation will be done.
                     if (sr.getFuture().isDone()) {
-                        SinkCompleted sc = null;
+                        Serializable sc = null;
                         try {
                             sc = sr.getFuture().get();
                             completedSinkResults.add(sr);
@@ -177,25 +185,31 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                         tp.topic(), tp.partition(), groupId, subscriber.getId()));
     }
 
-    private ThreadPoolExecutor determineSinkExecutor(String key) {
-        return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
-    }
+    //private ThreadPoolExecutor determineSinkExecutor(String key) {
+    //    return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
+    //}
 
     /**
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
      */
     private SinkResult doSinkAsync(ConsumerRecord<String, ObjectNode> filteredRecord, long retryBegin, int retryTimes) {
-        final String key = filteredRecord.key();
-        final ObjectNode value = filteredRecord.value();
+        //final String key = filteredRecord.key();
+        //final ObjectNode value = filteredRecord.value();
         final String subscribeId = KafkaUtil.getFirstValueAsString(filteredRecord.headers(), KEY_SUBSCRIBER_ID);
         final boolean isSequence = KafkaUtil.getFirstValueAsBoolean(filteredRecord.headers(), KEY_IS_SEQUENCE);
 
-        // Determine the sink task executor.
-        final ThreadPoolExecutor executor = determineSinkExecutor(key);
+        // Notice: For reduce the complexity, asynchronous execution is not supported here temporarily, because if the
+        // sink implementation is like producer.send(), it is itself asynchronous, which will generate two layers of
+        // future, and the processing is not concise enough
+        //
+        //// Determine the sink task executor.
+        //final ThreadPoolExecutor executor = determineSinkExecutor(key);
+        //final Future<? extends Serializable> future = executor.submit(() ->
+        //        subscribeSink.doSink(registry, subscribeId, isSequence, filteredRecord));
+        //return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
 
-        final Future<? extends SinkCompleted> future = executor.submit(() ->
-                subscribeSink.doSink(registry, subscribeId, isSequence, filteredRecord));
-        return new SinkResult(filteredRecord, future, retryBegin, retryTimes);
+        return new SinkResult(filteredRecord, subscribeSink.doSink(subscribeId, isSequence, filteredRecord),
+                retryBegin, retryTimes);
     }
 
     @Getter
@@ -205,14 +219,9 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     @ToString(callSuper = true)
     static class SinkResult {
         private ConsumerRecord<String, ObjectNode> record;
-        private Future<? extends SinkCompleted> future;
+        private Future<? extends Serializable> future;
         private long retryBegin;
         private int retryTimes;
-    }
-
-    public interface SinkCompleted {
-        SinkCompleted EMPTY = new SinkCompleted() {
-        };
     }
 
 }

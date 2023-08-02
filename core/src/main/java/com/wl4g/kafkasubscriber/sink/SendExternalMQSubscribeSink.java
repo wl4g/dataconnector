@@ -18,9 +18,10 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher.SinkCompleted;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+import java.io.Serializable;
+import java.util.concurrent.Future;
 
 /**
  * The {@link SendExternalMQSubscribeSink}
@@ -38,10 +39,9 @@ public class SendExternalMQSubscribeSink extends AbstractSubscribeSink {
     }
 
     @Override
-    public SinkCompleted doSink(CachingSubscriberRegistry registry,
-                                String subscriberId,
-                                boolean sequence,
-                                ConsumerRecord<String, ObjectNode> record) {
+    public Future<? extends Serializable> doSink(String subscriberId,
+                                                 boolean sequence,
+                                                 ConsumerRecord<String, ObjectNode> record) {
         throw new UnsupportedOperationException();
     }
 

@@ -17,12 +17,13 @@
 package com.wl4g.kafkasubscriber.config;
 
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.bean.TenantInfo;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import com.wl4g.kafkasubscriber.source.ISubscribeSourceProvider;
-import com.wl4g.kafkasubscriber.source.StaticSubscribeSourceProvider;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -50,10 +51,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG;
@@ -136,12 +139,28 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
         private @Builder.Default List<ISubscribeFilter> filters = new ArrayList<>(2);
         private @Builder.Default List<ISubscribeSink> sinks = new ArrayList<>(2);
         private @Builder.Default List<SubscriberInfo> subscribers = new ArrayList<>(2);
+        private @Builder.Default List<TenantInfo> tenants = new ArrayList<>(2);
+        //
+        // Parsed to transient properties.
+        //
+        private transient Map<String, ISubscribeSourceProvider> sourceMap;
+        private transient Map<String, ISubscribeFilter> filterMap;
+        private transient Map<String, ISubscribeSink> sinkMap;
+        private transient Map<String, SubscriberInfo> subscriberMap;
+        private transient Map<String, TenantInfo> tenantMap;
 
         public void validate() {
+            Assert2.notNullOf(sources, "sources");
+            Assert2.notNullOf(filters, "filters");
+            Assert2.notNullOf(sinks, "sinks");
+            Assert2.notNullOf(subscribers, "subscribers");
+            Assert2.notNullOf(tenants, "tenants");
+
             sources.forEach(ISubscribeSourceProvider::validate);
             filters.forEach(ISubscribeFilter::validate);
             sinks.forEach(ISubscribeSink::validate);
             subscribers.forEach(SubscriberInfo::validate);
+            tenants.forEach(TenantInfo::validate);
 
             // Check for sources name duplicate.
             Assert2.isTrueOf(sources.size() == new HashSet<>(sources.stream()
@@ -153,6 +172,52 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
             Assert2.isTrueOf(sinks.size() == new HashSet<>(sinks.stream()
                     .map(ISubscribeSink::getName).collect(toList())).size(), "sinks name duplicate");
         }
+
+        //
+        // Parsed to transient properties.
+        //
+
+        public Map<String, ISubscribeSourceProvider> getSourceMap() {
+            if (Objects.isNull(sourceMap)) {
+                sourceMap = safeList(sources).stream().collect(toMap(ISubscribeSourceProvider::getName, e -> e));
+            }
+            return sourceMap;
+        }
+
+        public Map<String, ISubscribeFilter> getFilterMap() {
+            if (Objects.isNull(filterMap)) {
+                filterMap = safeList(filters).stream().collect(toMap(ISubscribeFilter::getName, e -> e));
+            }
+            return filterMap;
+        }
+
+        public Map<String, ISubscribeSink> getSinkMap() {
+            if (Objects.isNull(sinkMap)) {
+                sinkMap = safeList(sinks).stream().collect(toMap(ISubscribeSink::getName, e -> e));
+            }
+            return sinkMap;
+        }
+
+        public Map<String, SubscriberInfo> getSubscriberMap() {
+            if (Objects.isNull(subscriberMap)) {
+                subscriberMap = safeList(subscribers)
+                        .stream()
+                        .filter(SubscriberInfo::isEnable)
+                        .collect(toMap(SubscriberInfo::getId, e -> e));
+            }
+            return subscriberMap;
+        }
+
+        public Map<String, TenantInfo> getTenantMap() {
+            if (Objects.isNull(tenantMap)) {
+                tenantMap = safeList(tenants)
+                        .stream()
+                        .filter(TenantInfo::isEnable)
+                        .collect(toMap(TenantInfo::getId, e -> e));
+            }
+            return tenantMap;
+        }
+
     }
 
     // ----- Pipelines configuration. -----
@@ -165,9 +230,9 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
     public static class SubscribeEnginePipelineConfig {
         private String name;
         private @Builder.Default boolean enable = true;
-        private @Builder.Default String source = StaticSubscribeSourceProvider.TYPE_NAME;
-        private @Builder.Default String filter = DefaultRecordMatchSubscribeFilter.TYPE_NAME;
-        private @Builder.Default String sink = DefaultPrintSubscribeSink.TYPE_NAME;
+        private String source;
+        private String filter;
+        private String sink;
         //
         // Parsed to transient properties.
         //
@@ -201,45 +266,6 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
             Assert2.hasTextOf(topicPattern, "topicPattern");
             Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
         }
-
-        public String getGroupId() {
-            return getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG);
-        }
-
-        public void optimizeProperties() {
-            // The filter message handler is internally hardcoded to use JsonNode.
-            final String oldKeyDeserializer = getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG);
-            getConsumerProps().put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", KEY_DESERIALIZER_CLASS_CONFIG,
-                    getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG), oldKeyDeserializer, getGroupId());
-
-            final String oldValueDeserializer = getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG);
-            getConsumerProps().put(VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", VALUE_DESERIALIZER_CLASS_CONFIG,
-                    getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG), oldValueDeserializer, getGroupId());
-
-            // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
-            final String oldAutoCreateTopics = getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG);
-            getConsumerProps().put(ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ALLOW_AUTO_CREATE_TOPICS_CONFIG,
-                    getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG), oldAutoCreateTopics, getGroupId());
-
-            // Mandatory manual commit.
-            final String oldEnableAutoCommit = getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG);
-            getConsumerProps().put(ENABLE_AUTO_COMMIT_CONFIG, "false");
-            log.info("Optimized source '{}' from {} to {} of groupId: {}", ENABLE_AUTO_COMMIT_CONFIG,
-                    getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG), oldEnableAutoCommit, getGroupId());
-
-            // TODO checking by merge to sources and filter with pipeline
-            // Should be 'max.poll.records' equals to filter executor queue size.
-//            final Object originalMaxPollRecords = getConsumerProps().get(MAX_POLL_RECORDS_CONFIG);
-//            getConsumerProps().put(MAX_POLL_RECORDS_CONFIG,
-//                    String.valueOf(getFilter().getProcessProps().getSharedExecutorQueueSize()));
-//            log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
-//                    MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, getFilter().getProcessProps()
-//                            .getSharedExecutorQueueSize(), getGroupId());
-        }
-
     }
 
     @Getter
@@ -323,6 +349,50 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
             Assert2.isTrueOf(parallelism > 0 && parallelism < 100, "parallelism > 0 && parallelism < 100");
             Assert2.notNullOf(consumerProps.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
         }
+
+        public String getRequiredBootstrapServers() {
+            return Assert2.hasTextOf(consumerProps.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
+        }
+
+        public String getGroupId() {
+            return getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG);
+        }
+
+        public BaseConsumerConfig optimizeProperties() {
+            // The filter message handler is internally hardcoded to use JsonNode.
+            final String oldKeyDeserializer = getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG);
+            getConsumerProps().put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", KEY_DESERIALIZER_CLASS_CONFIG,
+                    getConsumerProps().get(KEY_DESERIALIZER_CLASS_CONFIG), oldKeyDeserializer, getGroupId());
+
+            final String oldValueDeserializer = getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG);
+            getConsumerProps().put(VALUE_DESERIALIZER_CLASS_CONFIG, KafkaConsumerBuilder.ObjectNodeDeserializer.class.getName());
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", VALUE_DESERIALIZER_CLASS_CONFIG,
+                    getConsumerProps().get(VALUE_DESERIALIZER_CLASS_CONFIG), oldValueDeserializer, getGroupId());
+
+            // Need auto create the filtered topic by subscriber. (broker should also be set to allow)
+            final String oldAutoCreateTopics = getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG);
+            getConsumerProps().put(ALLOW_AUTO_CREATE_TOPICS_CONFIG, "true");
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", ALLOW_AUTO_CREATE_TOPICS_CONFIG,
+                    getConsumerProps().get(ALLOW_AUTO_CREATE_TOPICS_CONFIG), oldAutoCreateTopics, getGroupId());
+
+            // Mandatory manual commit.
+            final String oldEnableAutoCommit = getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG);
+            getConsumerProps().put(ENABLE_AUTO_COMMIT_CONFIG, "false");
+            log.info("Optimized source '{}' from {} to {} of groupId: {}", ENABLE_AUTO_COMMIT_CONFIG,
+                    getConsumerProps().get(ENABLE_AUTO_COMMIT_CONFIG), oldEnableAutoCommit, getGroupId());
+
+            // TODO checking by merge to sources and filter with pipeline
+            // Should be 'max.poll.records' equals to filter executor queue size.
+            // final Object originalMaxPollRecords = getConsumerProps().get(MAX_POLL_RECORDS_CONFIG);
+            // getConsumerProps().put(MAX_POLL_RECORDS_CONFIG,
+            //         String.valueOf(getFilter().getProcessProps().getSharedExecutorQueueSize()));
+            // log.info("Optimized '{}' from {} to {} of pipeline.source groupId: {}",
+            //         MAX_POLL_RECORDS_CONFIG, originalMaxPollRecords, getFilter().getProcessProps()
+            //                 .getSharedExecutorQueueSize(), getGroupId());
+
+            return this;
+        }
     }
 
     @Getter
@@ -396,7 +466,9 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
             Assert2.isTrueOf(producerMaxCountLimit > 0, "checkpointProducerMaxCountLimit > 0");
             Assert2.isTrueOf(qoSMaxRetriesTimeout > 0, "checkpointTimeoutMs > 0");
             // check for producer props.
-            Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
+            // TODO should to be priority choose sources bootstrap servers?
+            // 但这里也应该统一使用, com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager.lambda$addTopicAllIfNecessary$0(CheckpointTopicManager.java:88)
+            //Assert2.notNullOf(producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
             Assert2.notNullOf(producerProps.get(ProducerConfig.ACKS_CONFIG), "acks");
             Assert2.notNullOf(producerProps.get(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), "request.timeout.ms");
             Assert2.notNullOf(producerProps.get(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), "max.request.size");
