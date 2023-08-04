@@ -23,25 +23,20 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointCon
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
-import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
-import io.micrometer.core.instrument.Timer;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.CountMeterEvent;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.TimingMeterEvent;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.listener.BatchAcknowledgingMessageListener;
 import org.springframework.kafka.support.Acknowledgment;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Null;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 
 import static java.lang.System.getenv;
 
@@ -60,6 +55,7 @@ public abstract class AbstractBatchMessageDispatcher
     protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
+    protected final ApplicationEventPublisher eventPublisher;
     protected final String topicDesc;
     protected final String groupId;
 
@@ -67,12 +63,14 @@ public abstract class AbstractBatchMessageDispatcher
                                           SubscribeEnginePipelineConfig pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
+                                          ApplicationEventPublisher eventPublisher,
                                           String topicDesc,
                                           String groupId) {
         this.config = Assert2.notNullOf(config, "config");
         this.pipelineConfig = Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
         this.registry = Assert2.notNullOf(registry, "registry");
+        this.eventPublisher = Assert2.notNullOf(eventPublisher, "eventPublisher");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
         this.topicDesc = Assert2.notNullOf(topicDesc, "topicDesc");
     }
@@ -83,19 +81,29 @@ public abstract class AbstractBatchMessageDispatcher
 
     @Override
     public void onMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack) {
+        final long sharedConsumedTimerBegin = System.nanoTime();
         try {
-            addCounterMetrics(MetricsName.shared_consumed, topicDesc, null, groupId, null);
+            eventPublisher.publishEvent(new CountMeterEvent(
+                    MetricsName.shared_consumed,
+                    topicDesc,
+                    null,
+                    groupId, null, null));
 
-            final Timer timer = addTimerMetrics(MetricsName.shared_consumed_time,
-                    topicDesc, null, groupId, null);
-
-            timer.record(() -> doOnMessage(records, ack));
+            doOnMessage(records, ack);
         } catch (Throwable ex) {
             log.error(String.format("%s :: Failed to process message. - %s", groupId, records), ex);
             // Commit directly if no quality of service is required.
             if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isMoseOnce()) {
                 ack.acknowledge();
             }
+        } finally {
+            eventPublisher.publishEvent(new TimingMeterEvent(
+                    MetricsName.shared_consumed_time,
+                    topicDesc,
+                    null,
+                    groupId,
+                    null,
+                    Duration.ofNanos(System.nanoTime() - sharedConsumedTimerBegin)));
         }
     }
 
@@ -109,65 +117,6 @@ public abstract class AbstractBatchMessageDispatcher
         return checkpoint.getQos().isMoseOnceOrAnyRetriesAtMost()
                 && (retryTimes > checkpoint.getQoSMaxRetries()
                 || (System.nanoTime() - retryBegin) > Duration.ofMillis(checkpoint.getQoSMaxRetriesTimeout()).toNanos());
-    }
-
-    protected void addCounterMetrics(@NotNull SubscribeMeter.MetricsName metrics,
-                                     @NotBlank String topic,
-                                     @Null Integer partition,
-                                     @NotBlank String groupId,
-                                     @Null String subscriberId,
-                                     @Null String... addTags) {
-        Assert2.notNullOf(metrics, "metrics");
-        Assert2.hasTextOf(topic, "topic");
-        Assert2.hasTextOf(groupId, "groupId");
-
-        final List<String> tags = new ArrayList<>(8);
-        tags.add(SubscribeMeter.MetricsTag.TOPIC);
-        tags.add(topic);
-        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
-        tags.add(groupId);
-        if (Objects.nonNull(subscriberId)) {
-            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
-            tags.add(String.valueOf(subscriberId));
-        }
-        if (Objects.nonNull(partition)) {
-            tags.add(SubscribeMeter.MetricsTag.PARTITION);
-            tags.add(String.valueOf(partition));
-        }
-        if (Objects.nonNull(addTags)) {
-            tags.addAll(Arrays.asList(addTags));
-        }
-        SubscribeMeter.getDefault().counter(metrics.getName(), metrics.getHelp(), tags.toArray(new String[0])).increment();
-    }
-
-    protected Timer addTimerMetrics(@NotNull SubscribeMeter.MetricsName metrics,
-                                    @NotBlank String topic,
-                                    @Null Integer partition,
-                                    @NotBlank String groupId,
-                                    @Null String subscriberId,
-                                    @Null String... addTags) {
-        Assert2.notNullOf(metrics, "metrics");
-        Assert2.hasTextOf(topic, "topic");
-        Assert2.hasTextOf(groupId, "groupId");
-
-        final List<String> tags = new ArrayList<>(8);
-        tags.add(SubscribeMeter.MetricsTag.TOPIC);
-        tags.add(topic);
-        tags.add(SubscribeMeter.MetricsTag.GROUP_ID);
-        tags.add(groupId);
-        if (Objects.nonNull(subscriberId)) {
-            tags.add(SubscribeMeter.MetricsTag.SUBSCRIBE);
-            tags.add(String.valueOf(subscriberId));
-        }
-        if (Objects.nonNull(partition)) {
-            tags.add(SubscribeMeter.MetricsTag.PARTITION);
-            tags.add(String.valueOf(partition));
-        }
-        if (Objects.nonNull(addTags)) {
-            tags.addAll(Arrays.asList(addTags));
-        }
-        return SubscribeMeter.getDefault().timer(metrics.getName(), metrics.getHelp(),
-                SubscribeMeter.DEFAULT_PERCENTILES, tags.toArray(new String[0]));
     }
 
     public static final String KEY_SUBSCRIBER_ID = getenv().getOrDefault("INTERNAL_SUBSCRIBER_ID", "$$sub");

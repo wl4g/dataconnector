@@ -24,11 +24,13 @@ import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -59,11 +61,12 @@ public class KafkaSubscribeAutoConfiguration {
     }
 
     @Bean
-    public SubscribeEngineManager kafkaSubscribeManager(KafkaSubscribeConfiguration config,
-                                                        SubscribeEngineCustomizer customizer,
-                                                        CheckpointTopicManager topicManager,
-                                                        CachingSubscriberRegistry registry) {
-        return new SubscribeEngineManager(config, topicManager, customizer, registry);
+    public SubscribeEngineManager subscribeEngineManager(KafkaSubscribeConfiguration config,
+                                                         SubscribeEngineCustomizer customizer,
+                                                         CheckpointTopicManager topicManager,
+                                                         ApplicationEventPublisher eventPublisher,
+                                                         CachingSubscriberRegistry registry) {
+        return new SubscribeEngineManager(config, topicManager, customizer, eventPublisher, registry);
     }
 
     @Bean
@@ -72,6 +75,11 @@ public class KafkaSubscribeAutoConfiguration {
                                           @Value("${spring.application.name}") String appName,
                                           @Value("${server.port}") Integer port) {
         return new SubscribeMeter(context, meterRegistry, appName, port);
+    }
+
+    @Bean
+    public SubscribeMeterEventHandler subscribeMeterEventHandler(SubscribeMeter meter) {
+        return new SubscribeMeterEventHandler(meter);
     }
 
     @Bean

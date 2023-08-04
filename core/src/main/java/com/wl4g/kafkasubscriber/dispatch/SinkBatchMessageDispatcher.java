@@ -24,10 +24,10 @@ import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEngi
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
-import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.CountMeterEvent;
+import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler.TimingMeterEvent;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
-import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -37,6 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.support.Acknowledgment;
 
 import java.io.Serializable;
@@ -70,11 +71,12 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                                       SubscribeEnginePipelineConfig pipelineConfig,
                                       SubscribeEngineCustomizer customizer,
                                       CachingSubscriberRegistry registry,
+                                      ApplicationEventPublisher eventPublisher,
                                       String topicDesc,
                                       String groupId,
                                       SubscriberInfo subscriber,
                                       ISubscribeSink sink) {
-        super(config, pipelineConfig, customizer, registry, topicDesc, groupId);
+        super(config, pipelineConfig, customizer, registry, eventPublisher, topicDesc, groupId);
         this.subscribeSink = Assert2.notNullOf(sink, "sink");
         this.subscriber = Assert2.notNullOf(subscriber, "subscriber");
     }
@@ -88,9 +90,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                 .collect(toList());
 
         // Add timing sink metrics. (The benefit of not using lamda records is better use of arthas for troubleshooting during operation.)
-        final Timer sinkTimer = addTimerMetrics(SubscribeMeter.MetricsName.sink_time, topicDesc,
-                null, groupId, subscriber.getId());
-        final long sinkBeginTime = System.nanoTime();
+        final long sinkTimerBegin = System.nanoTime();
 
         // Wait for all sink to be completed.
         if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint()
@@ -107,13 +107,23 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                             sc = sr.getFuture().get();
                             completedSinkResults.add(sr);
 
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_success,
-                                    sr.getRecord().topic(), sr.getRecord().partition(), groupId, null);
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_success,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
                         } catch (InterruptedException | CancellationException ex) {
                             log.error("{} :: {} :: Unable to getting sink result.", groupId, subscriber.getId(), ex);
 
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getRecord().topic(),
-                                    sr.getRecord().partition(), groupId, null);
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_failure,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
 
                             if (pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getQos().isAnyRetriesAtMostOrStrictly()) {
                                 if (shouldGiveUpRetry(sr.getRetryBegin(), sr.getRetryTimes())) {
@@ -124,8 +134,13 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                         } catch (ExecutionException ex) {
                             log.error("{} :: {} :: Unable not to getting sink result.", groupId, subscriber.getId(), ex);
 
-                            addCounterMetrics(SubscribeMeter.MetricsName.sink_records_failure, sr.getRecord().topic(),
-                                    sr.getRecord().partition(), groupId, null);
+                            eventPublisher.publishEvent(new CountMeterEvent(
+                                    MetricsName.sink_records_failure,
+                                    sr.getRecord().topic(),
+                                    sr.getRecord().partition(),
+                                    groupId,
+                                    subscriber.getId(),
+                                    null));
 
                             final Throwable reason = ExceptionUtils.getRootCause(ex);
                             // User needs to give up trying again.
@@ -153,11 +168,11 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                 ack.acknowledge();
                 log.info("{} :: {} :: Sink to acknowledged.", groupId, subscriber.getId());
 
-                addAcknowledgeCounterMetrics(MetricsName.acknowledge_success, completedSinkResults);
+                postAcknowledgeCountMeter(MetricsName.acknowledge_success, completedSinkResults);
             } catch (Throwable ex) {
                 log.error(String.format("%s :: %s :: Failed to sink success acknowledge for %s", groupId, subscriber.getId(), ack), ex);
 
-                addAcknowledgeCounterMetrics(MetricsName.acknowledge_failure, completedSinkResults);
+                postAcknowledgeCountMeter(MetricsName.acknowledge_failure, completedSinkResults);
             }
         } else {
             try {
@@ -165,24 +180,37 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                 ack.acknowledge();
                 log.info("{} :: {} :: Force sink to acknowledged.", groupId, subscriber.getId());
 
-                addAcknowledgeCounterMetrics(MetricsName.acknowledge_success, sinkResults);
+                postAcknowledgeCountMeter(MetricsName.acknowledge_success, sinkResults);
             } catch (Throwable ex) {
                 log.error(String.format("%s :: %s :: Failed to sink force acknowledge for %s", groupId, subscriber.getId(), ack), ex);
 
-                addAcknowledgeCounterMetrics(MetricsName.acknowledge_failure, sinkResults);
+                postAcknowledgeCountMeter(MetricsName.acknowledge_failure, sinkResults);
             }
         }
 
-        sinkTimer.record(Duration.ofNanos(System.nanoTime() - sinkBeginTime));
+        eventPublisher.publishEvent(new TimingMeterEvent(
+                MetricsName.sink_time,
+                topicDesc,
+                null,
+                groupId,
+                subscriber.getId(),
+                Duration.ofNanos(System.nanoTime() - sinkTimerBegin)));
     }
 
-    private void addAcknowledgeCounterMetrics(MetricsName metrics,
-                                              Collection<SinkResult> sinkResults) {
+    private void postAcknowledgeCountMeter(MetricsName metrics,
+                                           Collection<SinkResult> sinkResults) {
         sinkResults.stream()
                 .map(sr -> new TopicPartition(sr.getRecord().topic(),
                         sr.getRecord().partition()))
-                .distinct().forEach(tp -> addCounterMetrics(metrics,
-                        tp.topic(), tp.partition(), groupId, subscriber.getId()));
+                .distinct().forEach(tp -> {
+                    eventPublisher.publishEvent(new CountMeterEvent(
+                            metrics,
+                            tp.topic(),
+                            tp.partition(),
+                            groupId,
+                            subscriber.getId(),
+                            null));
+                });
     }
 
     /**

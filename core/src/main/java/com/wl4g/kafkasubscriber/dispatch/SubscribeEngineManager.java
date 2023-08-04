@@ -36,6 +36,7 @@ import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 
 import javax.validation.constraints.NotNull;
@@ -74,16 +75,19 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
     private final CheckpointTopicManager topicManager;
     private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
+    private final ApplicationEventPublisher eventPublisher;
     private final Map<String, SubscribePipelineBootstrap> pipelineRegistry;
 
     public SubscribeEngineManager(@NotNull KafkaSubscribeConfiguration config,
                                   @NotNull CheckpointTopicManager topicManager,
                                   @NotNull SubscribeEngineCustomizer customizer,
+                                  @NotNull ApplicationEventPublisher eventPublisher,
                                   @NotNull CachingSubscriberRegistry registry) {
         this.config = notNullOf(config, "config");
         this.topicManager = notNullOf(topicManager, "topicManager");
         this.customizer = notNullOf(customizer, "customizer");
         this.registry = notNullOf(registry, "registry");
+        this.eventPublisher = notNullOf(eventPublisher, "eventPublisher");
         this.pipelineRegistry = new ConcurrentHashMap<>(config.getPipelines().size());
     }
 
@@ -216,9 +220,16 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         // Build filter dispatcher.
         final FilterBatchMessageDispatcher dispatcher = new FilterBatchMessageDispatcher(
-                config, pipelineConfig, subscribeSourceConfig, customizer, registry,
+                config,
+                pipelineConfig,
+                subscribeSourceConfig,
+                customizer,
+                registry,
+                eventPublisher,
                 subscribeSourceConfig.getTopicPattern(),
-                subscribeSourceConfig.getGroupId(), pipelineConfig.getParsedFilter(), acknowledgeProducer);
+                subscribeSourceConfig.getGroupId(),
+                pipelineConfig.getParsedFilter(),
+                acknowledgeProducer);
 
         return new SubscribeContainerBootstrap<>(dispatcher,
                 new KafkaConsumerBuilder(subscribeSourceConfig.getConsumerProps())
@@ -245,8 +256,15 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
         // Build sink dispatcher.
         final SinkBatchMessageDispatcher dispatcher = new SinkBatchMessageDispatcher(
-                config, pipelineConfig, customizer, registry, sinkFromTopic, sinkGroupId,
-                subscriber, pipelineConfig.getParsedSink());
+                config,
+                pipelineConfig,
+                customizer,
+                registry,
+                eventPublisher,
+                sinkFromTopic,
+                sinkGroupId,
+                subscriber,
+                pipelineConfig.getParsedSink());
 
         return new SubscribeContainerBootstrap<>(dispatcher,
                 new KafkaConsumerBuilder(sinkConfig.getConsumerProps())
