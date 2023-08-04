@@ -21,13 +21,10 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeExecutorConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
-import com.wl4g.kafkasubscriber.util.Crc32Util;
-import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -45,12 +42,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.getenv;
-import static java.util.Collections.synchronizedList;
 
 /**
  * The {@link AbstractBatchMessageDispatcher}
@@ -67,8 +60,6 @@ public abstract class AbstractBatchMessageDispatcher
     protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
-    protected final ThreadPoolExecutor sharedNonSequenceExecutor;
-    protected final List<ThreadPoolExecutor> isolationSequenceExecutors;
     protected final String topicDesc;
     protected final String groupId;
 
@@ -84,52 +75,10 @@ public abstract class AbstractBatchMessageDispatcher
         this.registry = Assert2.notNullOf(registry, "registry");
         this.groupId = Assert2.hasTextOf(groupId, "groupId");
         this.topicDesc = Assert2.notNullOf(topicDesc, "topicDesc");
-
-        // Create the shared filter single executor.
-        final SubscribeExecutorConfig processConfig = pipelineConfig.getParsedFilter().getFilterConfig().getExecutorProps();
-        this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
-                processConfig.getSharedExecutorThreadPoolSize(),
-                0L, TimeUnit.MILLISECONDS,
-                // TODO support bounded queue
-                new LinkedBlockingQueue<>(processConfig.getSharedExecutorQueueSize()),
-                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
-        if (processConfig.isExecutorWarmUp()) {
-            this.sharedNonSequenceExecutor.prestartAllCoreThreads();
-        }
-
-        // Create the sequence filter executors.
-        this.isolationSequenceExecutors = synchronizedList(new ArrayList<>(processConfig.getSequenceExecutorsMaxCountLimit()));
-        for (int i = 0; i < processConfig.getSequenceExecutorsMaxCountLimit(); i++) {
-            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1,
-                    0L, TimeUnit.MILLISECONDS,
-                    // TODO support bounded queue
-                    new LinkedBlockingQueue<>(processConfig.getSequenceExecutorsPerQueueSize()),
-                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
-            if (processConfig.isExecutorWarmUp()) {
-                executor.prestartAllCoreThreads();
-            }
-            this.isolationSequenceExecutors.add(executor);
-        }
     }
 
     @Override
     public void close() throws IOException {
-        try {
-            log.info("{} :: Closing shared non filter executor...", groupId);
-            this.sharedNonSequenceExecutor.shutdown();
-            log.info("{} :: Closed shared non filter executor.", groupId);
-        } catch (Throwable ex) {
-            log.error(String.format("%s :: Failed to close shared filter executor.", groupId), ex);
-        }
-        this.isolationSequenceExecutors.forEach(executor -> {
-            try {
-                log.info("{} :: Closing filter executor {}...", groupId, executor);
-                executor.shutdown();
-                log.info("{} :: Closed filter executor {}.", groupId, executor);
-            } catch (Throwable ex) {
-                log.error(String.format("%s :: Failed to close filter executor %s.", groupId, executor), ex);
-            }
-        });
     }
 
     @Override
@@ -151,19 +100,6 @@ public abstract class AbstractBatchMessageDispatcher
     }
 
     protected abstract void doOnMessage(List<ConsumerRecord<String, ObjectNode>> records, Acknowledgment ack);
-
-    protected ThreadPoolExecutor determineTaskExecutor(String subscriberId, boolean isSequence, String key) {
-        ThreadPoolExecutor executor = this.sharedNonSequenceExecutor;
-        if (isSequence) {
-            //final int mod = (int) subscriber.getId();
-            final int mod = (int) Crc32Util.compute(key);
-            final int index = isolationSequenceExecutors.size() % mod;
-            executor = isolationSequenceExecutors.get(index);
-            log.debug("{} :: {} :: determined isolation sequence executor index : {}, mod : {}",
-                    groupId, subscriberId, index, mod);
-        }
-        return executor;
-    }
 
     /**
      * Max retries then give up if it fails.

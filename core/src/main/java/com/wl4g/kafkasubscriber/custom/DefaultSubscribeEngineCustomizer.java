@@ -21,6 +21,7 @@ import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.bean.TenantInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.exception.KafkaSubscribeException;
 import com.wl4g.kafkasubscriber.source.ISubscribeSourceProvider;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -55,7 +56,7 @@ public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomiz
         // Getting tenant by ID.
         final TenantInfo tenant = config.getDefinitions().getTenantMap().get(tenantId);
         if (Objects.isNull(tenant)) {
-            throw new IllegalArgumentException(String.format("Not found tenantId '%s'", tenantId));
+            throw new KafkaSubscribeException(String.format("Not found tenantId '%s'", tenantId));
         }
 
         // Getting the pipeline source provider by name.
@@ -63,7 +64,7 @@ public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomiz
                 .stream()
                 .filter(p -> StringUtils.equals(p.getName(), pipelineName))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(String.format("Not found pipeline '%s'", pipelineName)))
+                .orElseThrow(() -> new KafkaSubscribeException(String.format("Not found pipeline '%s'", pipelineName)))
                 .getParsedSourceProvider();
 
         // Getting the source config of the tenant.
@@ -71,7 +72,7 @@ public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomiz
                 .stream()
                 .filter(s -> StringUtils.equals(s.getName(), tenant.getSourceName()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(String.format("Not found subscribe source " +
+                .orElseThrow(() -> new KafkaSubscribeException(String.format("Not found subscribe source " +
                         "config by pipeline: %s, tenant: '%s'", pipelineName, tenant.getId())));
     }
 

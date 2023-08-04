@@ -18,11 +18,12 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeExecutorConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
@@ -31,6 +32,7 @@ import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsTag;
 import com.wl4g.kafkasubscriber.util.Crc32Util;
+import com.wl4g.kafkasubscriber.util.NamedThreadFactory;
 import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -66,9 +68,12 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static java.util.Collections.synchronizedList;
 import static java.util.stream.Collectors.toList;
 import static org.apache.kafka.clients.producer.ProducerConfig.BOOTSTRAP_SERVERS_CONFIG;
 import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
@@ -84,6 +89,8 @@ import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_
 @Slf4j
 public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final SubscribeSourceConfig subscribeSourceConfig;
+    private final ThreadPoolExecutor sharedNonSequenceExecutor;
+    private final List<ThreadPoolExecutor> isolationSequenceExecutors;
     private final ISubscribeFilter subscribeFilter;
     private final Map<String, List<Producer<String, String>>> checkpointProducersMap;
     private final Producer<String, String> acknowledgeProducer;
@@ -102,11 +109,56 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         this.subscribeFilter = Assert2.notNullOf(filter, "filter");
         this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
         this.checkpointProducersMap = new ConcurrentHashMap<>(8);
+
+        // Create the shared filter single executor.
+        final SubscribeExecutorConfig processConfig = pipelineConfig.getParsedFilter().getFilterConfig().getExecutorProps();
+        this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
+                processConfig.getSharedExecutorThreadPoolSize(),
+                0L, TimeUnit.MILLISECONDS,
+                // TODO support bounded queue
+                new LinkedBlockingQueue<>(processConfig.getSharedExecutorQueueSize()),
+                new NamedThreadFactory("shared-".concat(getClass().getSimpleName())));
+        if (processConfig.isExecutorWarmUp()) {
+            this.sharedNonSequenceExecutor.prestartAllCoreThreads();
+        }
+
+        // Create the sequence filter executors.
+        this.isolationSequenceExecutors = synchronizedList(new ArrayList<>(processConfig.getSequenceExecutorsMaxCountLimit()));
+        for (int i = 0; i < processConfig.getSequenceExecutorsMaxCountLimit(); i++) {
+            final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1,
+                    0L, TimeUnit.MILLISECONDS,
+                    // TODO support bounded queue
+                    new LinkedBlockingQueue<>(processConfig.getSequenceExecutorsPerQueueSize()),
+                    new NamedThreadFactory("sequence-".concat(getClass().getSimpleName())));
+            if (processConfig.isExecutorWarmUp()) {
+                executor.prestartAllCoreThreads();
+            }
+            this.isolationSequenceExecutors.add(executor);
+        }
     }
 
     @Override
     public void close() throws IOException {
         super.close();
+
+        try {
+            log.info("{} :: Closing shared non filter executor...", groupId);
+            this.sharedNonSequenceExecutor.shutdown();
+            log.info("{} :: Closed shared non filter executor.", groupId);
+        } catch (Throwable ex) {
+            log.error(String.format("%s :: Failed to close shared filter executor.", groupId), ex);
+        }
+
+        this.isolationSequenceExecutors.forEach(executor -> {
+            try {
+                log.info("{} :: Closing filter executor {}...", groupId, executor);
+                executor.shutdown();
+                log.info("{} :: Closed filter executor {}.", groupId, executor);
+            } catch (Throwable ex) {
+                log.error(String.format("%s :: Failed to close filter executor %s.", groupId, executor), ex);
+            }
+        });
+
         this.checkpointProducersMap.forEach((tenantId, producers) -> {
             try {
                 producers.parallelStream().forEach(producer -> {
@@ -354,6 +406,19 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         return checkpointSentResults;
     }
 
+    private ThreadPoolExecutor determineTaskExecutor(String subscriberId, boolean isSequence, String key) {
+        ThreadPoolExecutor executor = this.sharedNonSequenceExecutor;
+        if (isSequence) {
+            //final int mod = (int) subscriber.getId();
+            final int mod = (int) Crc32Util.compute(key);
+            final int index = isolationSequenceExecutors.size() % mod;
+            executor = isolationSequenceExecutors.get(index);
+            log.debug("{} :: {} :: determined isolation sequence executor index : {}, mod : {}",
+                    groupId, subscriberId, index, mod);
+        }
+        return executor;
+    }
+
     private void enqueueFilteredExecutor(FilteredResult fr, List<FilteredResult> filteredResults) {
         log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
         final SubscriberRecord sr = fr.getRecord();
@@ -385,7 +450,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
                     groupId, index, mod, subscriber.getId());
         }
         if (Objects.isNull(producer)) {
-            throw new IllegalStateException(String.format("%s :: Could not getting producer by subscriber: %s, key: %s",
+            throw new KafkaSubscribeException(String.format("%s :: Could not getting producer by subscriber: %s, key: %s",
                     groupId, subscriber.getId(), key));
         }
         log.debug("{} :: Using kafka producer by subscriber: {}, key: {}", groupId, subscriber.getId(), key);

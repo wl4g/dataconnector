@@ -18,9 +18,9 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
@@ -184,10 +184,6 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
                 .distinct().forEach(tp -> addCounterMetrics(metrics,
                         tp.topic(), tp.partition(), groupId, subscriber.getId()));
     }
-
-    //private ThreadPoolExecutor determineSinkExecutor(String key) {
-    //    return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
-    //}
 
     /**
      * {@link org.apache.kafka.clients.producer.internals.ProducerBatch completeFutureAndFireCallbacks at #L281}
