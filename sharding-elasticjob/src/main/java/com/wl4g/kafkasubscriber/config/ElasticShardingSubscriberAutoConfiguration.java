@@ -16,8 +16,8 @@
 
 package com.wl4g.kafkasubscriber.config;
 
-import com.wl4g.kafkasubscriber.coordinator.ElasticShardingSubscriberCoordinator;
-import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
+import com.wl4g.kafkasubscriber.coordinator.ElasticAbstractSubscribeCoordinator;
+import com.wl4g.kafkasubscriber.coordinator.AbstractSubscribeCoordinator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,8 +31,8 @@ import org.springframework.context.annotation.Configuration;
 public class ElasticShardingSubscriberAutoConfiguration {
 
     @Bean
-    public ShardingSubscriberCoordinator elasticShardingSubscriberCoordinator() {
-        return new ElasticShardingSubscriberCoordinator();
+    public AbstractSubscribeCoordinator elasticShardingSubscriberCoordinator() {
+        return new ElasticAbstractSubscribeCoordinator();
     }
 
 }

@@ -18,10 +18,10 @@
 package com.wl4g.kafkasubscriber.dispatch;
 
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.TopicConfigurationException;
@@ -82,7 +82,7 @@ public class CheckpointTopicManager {
         log.info("Initializing all pipeline topics if necessary of {} ...", config.getPipelines().size());
         config.getPipelines().forEach(pipeline -> {
             try {
-                addSubscribersTopicIfNecessary(pipeline, registry.getCurrentShardingAll(), timeout);
+                addSubscribersTopicIfNecessary(pipeline, registry.getSubscribers(pipeline.getName()), timeout);
             } catch (Throwable ex) {
                 throw new TopicConfigurationException(String.format("Failed to create topics of pipeline %s",
                         pipeline.getName()), ex);

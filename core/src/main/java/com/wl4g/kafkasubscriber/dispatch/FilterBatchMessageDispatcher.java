@@ -57,6 +57,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -322,22 +323,26 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     }
 
     private List<SubscriberRecord> matchToSubscribesRecords(List<ConsumerRecord<String, ObjectNode>> records) {
-        final List<SubscriberInfo> subscribers = customizer.loadSubscribers(pipelineConfig.getName(),
-                SubscriberInfo.builder().build());
+        final Collection<SubscriberInfo> subscribers = registry.getSubscribers(pipelineConfig.getName());
 
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
         // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        subscribeFilter.updateConfigWithMergeSubscribers(subscribers,
-                Duration.ofMillis(subscribeSourceConfig.getMatchToSubscriberUpdateDelayTime()).toNanos());
+        subscribeFilter.updateMergeConditions(subscribers, Duration.ofMillis(subscribeSourceConfig
+                .getUpdateMergeConditionsDelayTime()).toNanos());
 
-        return records.parallelStream().map(r -> safeList(subscribers).stream()
-                .filter(s -> customizer.matchSubscriberRecord(pipelineConfig.getName(), s, r)).limit(1)
-                .findFirst()
-                .map(s -> new SubscriberRecord(s, r)).orElseGet(() -> {
-                    log.warn(String.format("%s :: No matched subscriber for headers: %s, key: %s, value: %s", groupId, r.headers(), r.key(), r.value()));
-                    return null;
-                })).filter(Objects::nonNull).collect(toList());
+        return safeList(records).parallelStream().map(r ->
+                        safeList(subscribers)
+                                .stream()
+                                .filter(s -> customizer.matchSubscriberRecord(pipelineConfig.getName(), s, r)).limit(1)
+                                .findFirst()
+                                .map(s -> new SubscriberRecord(s, r))
+                                .orElseGet(() -> {
+                                    log.warn(String.format("%s :: No matched subscriber for headers: %s, key: %s, value: %s", groupId, r.headers(), r.key(), r.value()));
+                                    return null;
+                                }))
+                .filter(Objects::nonNull)
+                .collect(toList());
     }
 
     private Set<CheckpointSentResult> doParallelFilterAndSendAsync(List<ConsumerRecord<String, ObjectNode>> records) {

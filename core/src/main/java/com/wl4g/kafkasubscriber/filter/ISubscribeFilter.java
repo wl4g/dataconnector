@@ -17,11 +17,11 @@
 package com.wl4g.kafkasubscriber.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import java.util.List;
+import java.util.Collection;
 
 /**
  * The custom subscribe processing filtering, support {@link #doMatch(SubscriberInfo, ConsumerRecord)}
@@ -43,11 +43,12 @@ public interface ISubscribeFilter {
     boolean doMatch(SubscriberInfo subscriber,
                     ConsumerRecord<String, ObjectNode> record);
 
-    default ConsumerRecord<String, ObjectNode> doMap(SubscriberInfo subscriber,
-                                                     ConsumerRecord<String, ObjectNode> record) {
+    default ConsumerRecord<String, ObjectNode> doMap(
+            SubscriberInfo subscriber,
+            ConsumerRecord<String, ObjectNode> record) {
         return record;
     }
 
-    void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime);
+    void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime);
 
 }

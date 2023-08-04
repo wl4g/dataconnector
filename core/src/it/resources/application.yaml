@@ -61,20 +61,18 @@ kafka-subscriber:
         name: defaultStaticSourceProvider # Custom source provider bean name
         staticConfigs:
           - name: kafka01
-            topicPattern: "test-input"
+            topicPattern: "test_shared_input"
             parallelism: 2
-            matchToSubscriberUpdateDelayTime: 3
             consumerProps:
-              bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-              group.id: "test_shared_source_101"
+              bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092}
+              group.id: "test_shared_source_01"
               <<: *baseConsumerProps
           - name: kafka02
-            topicPattern: "test-input"
+            topicPattern: "test_t1003_input"
             parallelism: 2
-            matchToSubscriberUpdateDelayTime: 3
             consumerProps:
-              bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-              group.id: "test_shared_source_102"
+              bootstrap.servers: ${IT_KAFKA_SERVERS_02:localhost:9092}
+              group.id: "test_isolation_source_02"
               <<: *baseConsumerProps
       #- !JDBC
       #  name: jdbcSourceProvider # The example custom JDBC source provider.
@@ -88,7 +86,7 @@ kafka-subscriber:
       - !EXPRESSION_MATCH
         name: defaultSubscribeFilter # Custom subscribe filter bean name
         filterConfig:
-          topicPrefix: "test_shared_filtered_"
+          topicPrefix: "test_topic_filtered_"
           topicPartitions: 10
           replicationFactor: 1
           executorProps:
@@ -100,7 +98,7 @@ kafka-subscriber:
             qoSMaxRetriesTimeout: 1800000 # 30min
             producerMaxCountLimit: 100
             producerProps:
-              #bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092} # By default: {.source.consumerProps.'bootstrap.servers'}
+              #bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092} # By default: {.source.consumerProps.'bootstrap.servers'}
               acks: "0"
               request.timeout.ms: 30000
               max.request.size: 1048576
@@ -117,13 +115,12 @@ kafka-subscriber:
       - !PRINT
         name: defaultSubscribeSink # Custom subscribe sink bean name
         sinkConfig:
-          groupIdPrefix: "test_isolation_sink_"
+          groupIdPrefix: "test_group_sink_"
           parallelism: 2
           executorProps:
             <<: *baseExecutorProps
           consumerProps:
-            bootstrap.servers: ${IT_KAFKA_SERVERS:localhost:9092}
-            group.id: "test_shared_source_101"
+            bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092}
             <<: *baseConsumerProps
 
     ## Notice: The following configuration method is usually used in experimental scenarios to
@@ -137,7 +134,7 @@ kafka-subscriber:
         settings:
           isSequence: false
           logRetentionTime: 1d
-          logRetentionSize: 1GB
+          logRetentionSize: 10GB
           properties:
             defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
       - id: s1002
@@ -147,7 +144,7 @@ kafka-subscriber:
         settings:
           isSequence: false
           logRetentionTime: 1d
-          logRetentionSize: 1GB
+          logRetentionSize: 10GB
           properties:
             defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
       - id: s1003
@@ -157,7 +154,7 @@ kafka-subscriber:
         settings:
           isSequence: false
           logRetentionTime: 1d
-          logRetentionSize: 1GB
+          logRetentionSize: 10GB
           properties:
             defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
 
@@ -174,7 +171,7 @@ kafka-subscriber:
         properties: {}
       - id: t1003
         name: "tenant_3"
-        sourceName: kafka03
+        sourceName: kafka02
         enable: true
         properties: {}
 

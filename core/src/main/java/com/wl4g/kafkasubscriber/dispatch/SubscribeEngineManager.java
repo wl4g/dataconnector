@@ -37,6 +37,8 @@ import org.apache.kafka.common.MetricName;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 
 import javax.validation.constraints.NotNull;
@@ -68,6 +70,7 @@ import static org.apache.commons.lang3.StringUtils.equalsAny;
  * @since v1.0
  **/
 @Slf4j
+@Order(Ordered.LOWEST_PRECEDENCE - 100)
 public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -118,7 +121,9 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
             log.warn("Already started, ignore again.");
             return;
         }
-//        topicManager.initPipelinesTopicIfNecessary(15_000);
+
+        // TODO
+        // topicManager.initPipelinesTopicIfNecessary(15_000);
         registerAllPipelines();
         startAllPipelines();
     }
@@ -193,7 +198,7 @@ public class SubscribeEngineManager implements ApplicationRunner, Closeable {
                         pipelineConfig);
             } else {
                 // Build sink dispatchers.
-                sinkBootstraps = safeList(registry.getCurrentShardingAll())
+                sinkBootstraps = safeList(registry.getSubscribers(pipelineConfig.getName()))
                         .stream()
                         .collect(Collectors.toMap(
                                 SubscriberInfo::getId,

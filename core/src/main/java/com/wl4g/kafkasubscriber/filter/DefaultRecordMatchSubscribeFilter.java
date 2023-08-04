@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -63,17 +64,17 @@ public class DefaultRecordMatchSubscribeFilter extends AbstractSubscribeFilter {
     }
 
     @Override
-    public void updateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers, long delayTime) {
+    public void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime) {
         if (Math.abs(System.nanoTime()) - lastUpdateTime.get() > delayTime) {
             log.info("- :: {} :: Update default record matching operator config.", TYPE_NAME);
             lastUpdateTime.set(System.nanoTime());
-            doUpdateConfigWithMergeSubscribers(subscribers);
+            doUpdateMergeConditions(subscribers);
         } else {
             log.info("- :: {} :: Skip update default record matching operator config.", TYPE_NAME);
         }
     }
 
-    private void doUpdateConfigWithMergeSubscribers(List<SubscriberInfo> subscribers) {
+    private void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers) {
         final ExpressionOperator.LogicalOperator rootOperator = new ExpressionOperator.LogicalOperator();
         rootOperator.setName("__ROOT_OPERATOR__");
         rootOperator.setType(ExpressionOperator.OperatorType.LOGICAL.name());
@@ -83,7 +84,7 @@ public class DefaultRecordMatchSubscribeFilter extends AbstractSubscribeFilter {
         final List<ExpressionOperator> subConditions = safeList(subscribers).stream().map(s -> {
             final String exprJson = s.getSettings().getProperties().getProperty(getName());
             if (StringUtils.isBlank(exprJson)) {
-                throw new IllegalArgumentException(String.format("Could not configuration item named '%s' was found from the subscriber '%s' properties",
+                throw new IllegalArgumentException(String.format("Could not match expression filter named '%s' was found from the subscriber '%s' properties",
                         getName(), s.getId()));
             }
             return JacksonUtils.parseJSON(exprJson, ExpressionOperator.class);

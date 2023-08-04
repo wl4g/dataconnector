@@ -28,6 +28,7 @@ import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotNull;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -67,6 +68,18 @@ public abstract class KafkaUtil {
         return null;
     }
 
+    public static AdminClient createAdminClient(
+            @NotBlank String bootstrapServers) {
+        Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
+
+        final Properties properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 60_000);
+        properties.put(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, 10_000);
+
+        return AdminClient.create(properties);
+    }
+
     public static Collection<MemberDescription> getGroupConsumers(
             @NotBlank String bootstrapServers,
             @NotBlank String groupId,
@@ -75,26 +88,32 @@ public abstract class KafkaUtil {
         Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
         Assert2.hasTextOf(groupId, "groupId");
 
-        final Properties properties = new Properties();
-        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 60_000);
-        properties.put(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, 10_000);
+        try (AdminClient adminClient = createAdminClient(bootstrapServers)) {
+            return getGroupConsumers(adminClient, groupId, timeout);
+        }
+    }
 
-        try (AdminClient adminClient = AdminClient.create(properties)) {
-            DescribeConsumerGroupsOptions describeOptions = new DescribeConsumerGroupsOptions()
-                    .includeAuthorizedOperations(false);
+    public static Collection<MemberDescription> getGroupConsumers(
+            @NotNull AdminClient adminClient,
+            @NotBlank String groupId,
+            long timeout)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Assert2.notNullOf(adminClient, "adminClient");
+        Assert2.hasTextOf(groupId, "groupId");
 
-            DescribeConsumerGroupsResult describeResult = adminClient.describeConsumerGroups(
-                    Collections.singletonList(groupId), describeOptions);
+        DescribeConsumerGroupsOptions describeOptions = new DescribeConsumerGroupsOptions()
+                .includeAuthorizedOperations(false);
 
-            Map<String, ConsumerGroupDescription> consumerGroupDescriptionMap =
-                    describeResult.all().get(timeout, TimeUnit.MILLISECONDS);
+        DescribeConsumerGroupsResult describeResult = adminClient.describeConsumerGroups(
+                Collections.singletonList(groupId), describeOptions);
 
-            if (consumerGroupDescriptionMap.containsKey(groupId)) {
-                ConsumerGroupDescription consumerGroupDescription =
-                        consumerGroupDescriptionMap.get(groupId);
-                return consumerGroupDescription.members();
-            }
+        Map<String, ConsumerGroupDescription> consumerGroupDescriptionMap =
+                describeResult.all().get(timeout, TimeUnit.MILLISECONDS);
+
+        if (consumerGroupDescriptionMap.containsKey(groupId)) {
+            ConsumerGroupDescription consumerGroupDescription =
+                    consumerGroupDescriptionMap.get(groupId);
+            return consumerGroupDescription.members();
         }
 
         return Collections.emptyList();

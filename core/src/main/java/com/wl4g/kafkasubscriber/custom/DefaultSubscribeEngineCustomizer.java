@@ -21,11 +21,15 @@ import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.bean.TenantInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.coordinator.ISubscribeCoordinator;
 import com.wl4g.kafkasubscriber.exception.KafkaSubscribeException;
 import com.wl4g.kafkasubscriber.source.ISubscribeSourceProvider;
+import com.wl4g.kafkasubscriber.util.Crc32Util;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Null;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -44,7 +48,14 @@ public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomiz
     private final KafkaSubscribeConfiguration config;
 
     @Override
-    public List<SubscriberInfo> loadSubscribers(String pipelineName, SubscriberInfo query) {
+    public List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
+                                                @Null ISubscribeCoordinator.ShardingInfo sharding) {
+        if (Objects.nonNull(sharding)) {
+            return safeList(config.getDefinitions().getSubscribers())
+                    .stream()
+                    .filter(s -> sharding.getItems().contains(sharding.getTotal() % (int) Crc32Util.compute(s.getId())))
+                    .collect(Collectors.toList());
+        }
         return safeList(config.getDefinitions().getSubscribers())
                 .stream()
                 .filter(SubscriberInfo::isEnable)

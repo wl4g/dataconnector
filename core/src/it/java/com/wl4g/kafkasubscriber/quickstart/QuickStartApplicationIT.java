@@ -19,6 +19,10 @@ package com.wl4g.kafkasubscriber.quickstart;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 /**
  * The {@link QuickStartApplicationIT}
@@ -26,15 +30,36 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * @author James Wong
  * @since v1.0
  **/
+@Configuration
 @SpringBootApplication(scanBasePackages = {"com.wl4g.kafkasubscriber"})
 public class QuickStartApplicationIT {
 
     public static void main(String[] args) {
-        System.out.println("Integration test topic initializing ...");
-        new QuickStartTopicInitializer().start();
-
         System.out.println("Integration test application starting ...");
         SpringApplication.run(QuickStartApplicationIT.class, args);
+    }
+
+    @Bean
+    public QuickStartMockInitializer quickStartTopicInitializer_with_broker01() {
+        return new QuickStartMockInitializer(
+                Boolean.parseBoolean(System.getenv().getOrDefault("IT_KAFKA_EMBEDDED_ENABLE", "true")),
+                System.getenv().getOrDefault("IT_KAFKA_SERVERS_01", "localhost:9092"),
+                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "shared_input")
+        );
+    }
+
+    @Bean
+    public QuickStartMockInitializer quickStartTopicInitializer_with_broker02() {
+        return new QuickStartMockInitializer(
+                Boolean.parseBoolean(System.getenv().getOrDefault("IT_KAFKA_EMBEDDED_ENABLE", "true")),
+                System.getenv().getOrDefault("IT_KAFKA_SERVERS_02", "localhost:9092"),
+                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "t1001_input")
+        );
+    }
+
+    @Bean
+    public QuickStartAssertion quickStartAssertionRunner(List<QuickStartMockInitializer> initializers) {
+        return new QuickStartAssertion(initializers);
     }
 
 }

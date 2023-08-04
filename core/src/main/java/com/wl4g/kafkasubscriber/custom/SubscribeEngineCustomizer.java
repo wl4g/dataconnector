@@ -17,11 +17,13 @@
 
 package com.wl4g.kafkasubscriber.custom;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
+import com.wl4g.kafkasubscriber.coordinator.ISubscribeCoordinator.ShardingInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -46,7 +48,7 @@ import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.K
 public interface SubscribeEngineCustomizer {
 
     List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
-                                         @Null SubscriberInfo query);
+                                         @Null ShardingInfo sharding);
 
     SubscribeSourceConfig loadSourceByTenant(@NotBlank String pipelineName,
                                              @NotBlank String tenantId);
@@ -70,8 +72,8 @@ public interface SubscribeEngineCustomizer {
                 return StringUtils.equals(first, subscriber.getId());
             }
             // Fallback match with message value.
-            return StringUtils.equals(record.value().remove(KEY_SUBSCRIBER_ID)
-                    .asText(""), subscriber.getId());
+            final JsonNode subId = record.value().remove(KEY_SUBSCRIBER_ID);
+            return Objects.nonNull(subId) && StringUtils.equals(subId.textValue(), subscriber.getId());
         }
         return false;
     }

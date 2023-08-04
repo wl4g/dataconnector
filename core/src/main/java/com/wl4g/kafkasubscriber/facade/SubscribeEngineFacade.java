@@ -17,16 +17,17 @@
 package com.wl4g.kafkasubscriber.facade;
 
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
-import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.dispatch.SinkBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager.ContainerStatus;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager.SubscribeContainerBootstrap;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager.SubscribePipelineBootstrap;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -50,8 +51,9 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 @Getter
 @AllArgsConstructor
 public class SubscribeEngineFacade {
-    private final KafkaSubscribeConfiguration config;
-    private final SubscribeEngineManager engineManager;
+    private final @Getter(AccessLevel.NONE) KafkaSubscribeConfiguration config;
+    private final @Getter(AccessLevel.NONE) SubscribeEngineManager engineManager;
+    private final @Getter(AccessLevel.NONE) SubscribeEventPublisher eventPublisher;
 
     public Map<String, SubscribePipelineBootstrap> getPipelineRegistry() {
         return engineManager.getPipelineRegistry();

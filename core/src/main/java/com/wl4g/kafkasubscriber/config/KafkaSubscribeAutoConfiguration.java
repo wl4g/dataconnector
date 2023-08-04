@@ -17,12 +17,14 @@
 package com.wl4g.kafkasubscriber.config;
 
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
-import com.wl4g.kafkasubscriber.coordinator.ShardingSubscriberCoordinator;
+import com.wl4g.kafkasubscriber.coordinator.ISubscribeCoordinator;
+import com.wl4g.kafkasubscriber.coordinator.KafkaSubscribeCoordinator;
 import com.wl4g.kafkasubscriber.custom.DefaultSubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
+import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
@@ -56,8 +58,15 @@ public class KafkaSubscribeAutoConfiguration {
     }
 
     @Bean
-    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscribeConfiguration config, SubscribeEngineManager engine) {
-        return new SubscribeEngineFacade(config, engine);
+    public SubscribeEventPublisher subscribeEventPublisher(KafkaSubscribeConfiguration config) {
+        return new SubscribeEventPublisher(config);
+    }
+
+    @Bean
+    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscribeConfiguration config,
+                                                       SubscribeEngineManager engineManager,
+                                                       SubscribeEventPublisher eventPublisher) {
+        return new SubscribeEngineFacade(config, engineManager, eventPublisher);
     }
 
     @Bean
@@ -90,9 +99,8 @@ public class KafkaSubscribeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ShardingSubscriberCoordinator shardingSubscriberCoordinator() {
-        return new ShardingSubscriberCoordinator() {
-        };
+    public ISubscribeCoordinator kafkaSubscriberCoordinator() {
+        return new KafkaSubscribeCoordinator();
     }
 
     @Bean

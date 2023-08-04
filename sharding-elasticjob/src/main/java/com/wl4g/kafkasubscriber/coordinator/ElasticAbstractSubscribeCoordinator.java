@@ -20,13 +20,13 @@ import org.apache.shardingsphere.elasticjob.api.ShardingContext;
 import org.apache.shardingsphere.elasticjob.simple.job.SimpleJob;
 
 /**
- * The {@link ShardingSubscriberCoordinator}
+ * The {@link AbstractSubscribeCoordinator}
  * based on elastic-job or nature zookeeper to implement find subscribers by sharding item.
  *
  * @author James Wong
  * @since v1.0
  **/
-public class ElasticShardingSubscriberCoordinator extends ShardingSubscriberCoordinator implements SimpleJob {
+public class ElasticAbstractSubscribeCoordinator extends AbstractSubscribeCoordinator implements SimpleJob {
 
     @Override
     public void execute(ShardingContext shardingContext) {

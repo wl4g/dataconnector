@@ -254,7 +254,7 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
     @ToString
     public static class SubscribeSourceConfig extends BaseConsumerConfig {
         private String topicPattern;
-        private @Builder.Default Long matchToSubscriberUpdateDelayTime = 3_000L;
+        private @Builder.Default Long updateMergeConditionsDelayTime = 3_000L;
 
         public SubscribeSourceConfig() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_0");
