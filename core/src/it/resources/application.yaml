@@ -77,16 +77,17 @@ kafka-subscriber:
       #- !JDBC
       #  name: jdbcSourceProvider # The example custom JDBC source provider.
       #  jdbcConfig:
-      #    jdbcUrl:
-      #    username:
-      #    password:
-      #    sql:
+      #    jdbcUrl: jdbc:postgresql://localhost:5432/subscriber
+      #    username: subscriber
+      #    password: 123456
+      #    sql: 'select * from t_subscriber'
 
     filters:
       - !EXPRESSION_MATCH
         name: defaultSubscribeFilter # Custom subscribe filter bean name
+        updateMergeConditionsDelayTime: 2000
         filterConfig:
-          topicPrefix: "test_topic_filtered_"
+          topicPrefix: "test_topic_ckp_"
           topicPartitions: 10
           replicationFactor: 1
           executorProps:
@@ -129,51 +130,72 @@ kafka-subscriber:
     subscribers:
       - id: s1001
         name: "subscriber_1"
-        tenantId: t1001
         enable: true
-        settings:
+        rule:
           isSequence: false
           logRetentionTime: 1d
           logRetentionSize: 10GB
-          properties:
-            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+          policies:
+            - tenantId: t1001
+              recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+              fieldFilter:
+          properties: { }
       - id: s1002
         name: "subscriber_2"
-        tenantId: t1002
         enable: true
-        settings:
+        rule:
           isSequence: false
           logRetentionTime: 1d
           logRetentionSize: 10GB
-          properties:
-            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+          policies:
+            - tenantId: t1002
+              recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+              fieldFilter:
+          properties: { }
       - id: s1003
         name: "subscriber_3"
-        tenantId: t1003
         enable: true
-        settings:
+        rule:
           isSequence: false
           logRetentionTime: 1d
           logRetentionSize: 10GB
-          properties:
-            defaultSubscribeFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+          policies:
+            - tenantId: t1001
+              recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+              fieldFilter: '{"fieldNames":["__properties__.__online__.connected"]}'
+            - tenantId: t1003
+              recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
+              fieldFilter:
+          properties: { }
 
     tenants:
       - id: t1001
         name: "tenant_1"
         sourceName: kafka01
         enable: true
-        properties: {}
+        properties: { }
       - id: t1002
         name: "tenant_2"
         sourceName: kafka01
         enable: true
-        properties: {}
+        properties: { }
       - id: t1003
         name: "tenant_3"
         sourceName: kafka02
         enable: true
-        properties: {}
+        properties: { }
+
+  coordinator:
+    shardingStrategy: AVG_SHARDING
+    bootstrapServers: ${IT_KAFKA_SERVERS_01:localhost:9092}
+    configConfig:
+      topic: "subscribe_coordinator_config_topic"
+      producerProps: {}
+      consumerProps: {}
+    discoveryConfig:
+      groupId: "subscribe_coordinator_discovery_group"
+      consumerProps: {}
+      adminProps: {}
 
   pipelines:
     - name: defaultPipeline

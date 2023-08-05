@@ -44,7 +44,8 @@ public class QuickStartApplicationIT {
         return new QuickStartMockInitializer(
                 Boolean.parseBoolean(System.getenv().getOrDefault("IT_KAFKA_EMBEDDED_ENABLE", "true")),
                 System.getenv().getOrDefault("IT_KAFKA_SERVERS_01", "localhost:9092"),
-                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "shared_input")
+                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "shared_input"),
+                1, 3
         );
     }
 
@@ -53,7 +54,8 @@ public class QuickStartApplicationIT {
         return new QuickStartMockInitializer(
                 Boolean.parseBoolean(System.getenv().getOrDefault("IT_KAFKA_EMBEDDED_ENABLE", "true")),
                 System.getenv().getOrDefault("IT_KAFKA_SERVERS_02", "localhost:9092"),
-                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "t1001_input")
+                System.getenv().getOrDefault("IT_KAFKA_INPUT_TOPIC", "t1001_input"),
+                3, 4
         );
     }
 

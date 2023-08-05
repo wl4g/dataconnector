@@ -19,8 +19,8 @@ package com.wl4g.kafkasubscriber.dispatch;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
@@ -67,7 +67,7 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private final SubscriberInfo subscriber;
     private final ISubscribeSink subscribeSink;
 
-    public SinkBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+    public SinkBatchMessageDispatcher(SubscribeConfiguration config,
                                       SubscribeEnginePipelineConfig pipelineConfig,
                                       SubscribeEngineCustomizer customizer,
                                       CachingSubscriberRegistry registry,
@@ -219,8 +219,8 @@ public class SinkBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
     private SinkResult doSinkAsync(ConsumerRecord<String, ObjectNode> filteredRecord, long retryBegin, int retryTimes) {
         //final String key = filteredRecord.key();
         //final ObjectNode value = filteredRecord.value();
-        final String subscribeId = KafkaUtil.getFirstValueAsString(filteredRecord.headers(), KEY_SUBSCRIBER_ID);
-        final boolean isSequence = KafkaUtil.getFirstValueAsBoolean(filteredRecord.headers(), KEY_IS_SEQUENCE);
+        final String subscribeId = KafkaUtil.getFirstValueAsString(filteredRecord.headers(), KEY_TENANT);
+        final boolean isSequence = KafkaUtil.getFirstValueAsBoolean(filteredRecord.headers(), KEY_SEQUENCE);
 
         // Notice: For reduce the complexity, asynchronous execution is not supported here temporarily, because if the
         // sink implementation is like producer.send(), it is itself asynchronous, which will generate two layers of

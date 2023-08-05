@@ -17,7 +17,7 @@
 
 package com.wl4g.kafkasubscriber.source;
 
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSourceConfig;
 
 import javax.validation.constraints.NotBlank;
 import java.util.List;

@@ -17,7 +17,7 @@
 package com.wl4g.kafkasubscriber.filter;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeFilterConfig;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,6 +33,7 @@ public abstract class AbstractSubscribeFilter implements ISubscribeFilter {
 
     private String name;
     private SubscribeFilterConfig filterConfig = new SubscribeFilterConfig();
+    private Long updateMergeConditionsDelayTime = 2_000L;
 
     @Override
     public void validate() {

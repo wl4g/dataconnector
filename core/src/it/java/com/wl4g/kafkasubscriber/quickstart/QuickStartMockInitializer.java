@@ -61,6 +61,8 @@ public class QuickStartMockInitializer extends BasedMockInitializer {
     static final Random random = new Random();
     boolean enableEmbeddedBroker;
     String inputTopic;
+    int tenantIdMinSuffixInclusive;
+    int tenantIdMaxSuffixExclusive;
     String brokerServers;
     KafkaContainer embeddedKafkaContainer;
 
@@ -72,10 +74,16 @@ public class QuickStartMockInitializer extends BasedMockInitializer {
     AtomicLong mockStatisticsSubscriber02Total = new AtomicLong(0);
     AtomicLong mockStatisticsSubscriber03Total = new AtomicLong(0);
 
-    public QuickStartMockInitializer(boolean enableEmbeddedBroker, String brokerServers, String inputTopic) {
+    public QuickStartMockInitializer(boolean enableEmbeddedBroker,
+                                     String brokerServers,
+                                     String inputTopic,
+                                     int tenantIdMinSuffixInclusive,
+                                     int tenantIdMaxSuffixExclusive) {
         this.enableEmbeddedBroker = enableEmbeddedBroker;
         this.brokerServers = Objects.requireNonNull(brokerServers);
         this.inputTopic = Objects.requireNonNull(inputTopic);
+        this.tenantIdMinSuffixInclusive = tenantIdMinSuffixInclusive;
+        this.tenantIdMaxSuffixExclusive = tenantIdMaxSuffixExclusive;
     }
 
     @Override
@@ -171,8 +179,8 @@ public class QuickStartMockInitializer extends BasedMockInitializer {
                         Properties value = new Properties();
                         value.put("cts", System.currentTimeMillis());
 
-                        int suffix = RandomUtils.nextInt(1, 4);
-                        value.put(FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID, "s100" + suffix);
+                        int suffix = RandomUtils.nextInt(tenantIdMinSuffixInclusive, tenantIdMaxSuffixExclusive);
+                        value.put(FilterBatchMessageDispatcher.KEY_TENANT, "t100" + suffix);
                         switch (suffix) {
                             case 1:
                                 mockStatisticsSubscriber01Total.incrementAndGet();

@@ -1,28 +1,28 @@
 /*
- * Copyright 2017 ~ 2025 the original authors James Wong.
+ *  Copyright (C) 2023 ~ 2035 the original authors WL4G (James Wong).
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *        http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ALL_OR KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
  */
 
-package com.wl4g.kafkasubscriber.facade;
+package com.wl4g.kafkasubscriber.coordinator;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.coordinator.KafkaSubscribeCoordinator;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -36,7 +36,6 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.serialization.StringSerializer;
 
 import javax.validation.constraints.NotNull;
 import java.time.Duration;
@@ -62,30 +61,17 @@ import static java.util.stream.Collectors.toList;
 @Getter
 public class SubscribeEventPublisher {
 
-    private final KafkaSubscribeConfiguration config;
+    private final SubscribeConfiguration config;
     private final Producer<String, String> producer;
 
-    public SubscribeEventPublisher(KafkaSubscribeConfiguration config) {
+    public SubscribeEventPublisher(SubscribeConfiguration config) {
         this.config = Assert2.notNullOf(config, "config");
 
-        Properties props = new Properties();
-        // TODO
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-        props.put(ProducerConfig.CLIENT_ID_CONFIG, "my-producer");
-        props.put(ProducerConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
-        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-        props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "100");
-        props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        props.put(ProducerConfig.ACKS_CONFIG, "all");
-        props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-        props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my-transactional-id");
-        props.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, "60000");
-        // TODO support using other?? avro/protobuf
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        final Properties props = new Properties();
+        props.putAll(config.getCoordinator().getConfigConfig().getProducerProps());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getCoordinator().getBootstrapServers());
         this.producer = new KafkaProducer<>(props);
-        // TODO
-//        this.producer.initTransactions();
+        this.producer.initTransactions();
     }
 
     public void publishSync(@NotNull List<SubscribeEvent> events,
@@ -122,10 +108,12 @@ public class SubscribeEventPublisher {
         try {
             producer.beginTransaction();
 
-            final List<Future<RecordMetadata>> futures = events.stream().map(event ->
-                            producer.send(new ProducerRecord<>(KafkaSubscribeCoordinator.SUBSCRIBE_COORDINATOR_TOPIC,
-                                    // TODO
-                                    "my-key", toJSONString(event))))
+            final List<Future<RecordMetadata>> futures = events
+                    .stream()
+                    .map(event -> producer.send(new ProducerRecord<>(config.getCoordinator()
+                            .getConfigConfig().getTopic(),
+                            // TODO
+                            "my-key", toJSONString(event))))
                     .collect(toList());
 
             producer.commitTransaction();

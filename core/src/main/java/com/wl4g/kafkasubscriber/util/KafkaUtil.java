@@ -29,6 +29,7 @@ import org.apache.kafka.common.header.Headers;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -52,7 +53,8 @@ public abstract class KafkaUtil {
     }
 
     public static String getFirstValueAsString(Headers headers, String key) {
-        return new String(Objects.requireNonNull(getFirstValue(headers, key)));
+        final byte[] value = getFirstValue(headers, key);
+        return Objects.nonNull(value) ? new String(value, StandardCharsets.UTF_8) : null;
     }
 
     public static byte[] getFirstValue(Headers headers, String key) {
@@ -68,16 +70,15 @@ public abstract class KafkaUtil {
         return null;
     }
 
-    public static AdminClient createAdminClient(
-            @NotBlank String bootstrapServers) {
-        Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
+    public static AdminClient createAdminClient(@NotNull Properties configProps) {
+        Assert2.notNullOf(configProps, "properties");
 
-        final Properties properties = new Properties();
-        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 60_000);
-        properties.put(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, 10_000);
+        final Properties props = new Properties();
+        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 60_000);
+        props.put(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, 10_000);
+        props.putAll(configProps);
 
-        return AdminClient.create(properties);
+        return AdminClient.create(props);
     }
 
     public static Collection<MemberDescription> getGroupConsumers(
@@ -88,7 +89,10 @@ public abstract class KafkaUtil {
         Assert2.hasTextOf(bootstrapServers, "bootstrapServers");
         Assert2.hasTextOf(groupId, "groupId");
 
-        try (AdminClient adminClient = createAdminClient(bootstrapServers)) {
+        final Properties props = new Properties();
+        props.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+
+        try (AdminClient adminClient = createAdminClient(props)) {
             return getGroupConsumers(adminClient, groupId, timeout);
         }
     }

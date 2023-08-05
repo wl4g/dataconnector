@@ -19,9 +19,9 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.TopicConfigurationException;
@@ -69,7 +69,7 @@ import static org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG;
 @Slf4j
 @AllArgsConstructor
 public class CheckpointTopicManager {
-    private final KafkaSubscribeConfiguration config;
+    private final SubscribeConfiguration config;
     private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
 
@@ -137,8 +137,8 @@ public class CheckpointTopicManager {
                 .map(subscriber -> {
                     // TODO add support more topic config props.
                     final Map<String, String> overrideItems = new HashMap<>();
-                    overrideItems.put(RETENTION_MS_CONFIG, String.valueOf(subscriber.getSettings().getLogRetentionTime().toMillis()));
-                    overrideItems.put(RETENTION_BYTES_CONFIG, String.valueOf(subscriber.getSettings().getLogRetentionBytes().toBytes()));
+                    overrideItems.put(RETENTION_MS_CONFIG, String.valueOf(subscriber.getRule().getLogRetentionTime().toMillis()));
+                    overrideItems.put(RETENTION_BYTES_CONFIG, String.valueOf(subscriber.getRule().getLogRetentionBytes().toBytes()));
                     return new AlterTopicConfig(customizer.generateCheckpointTopic(pipelineName,
                             topicPrefix, subscriber.getId()), subscriber, overrideItems);
                 })

@@ -19,7 +19,7 @@ package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import lombok.Getter;
 
@@ -30,7 +30,6 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
-import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static java.util.stream.Collectors.toMap;
 
 /**
@@ -41,11 +40,11 @@ import static java.util.stream.Collectors.toMap;
  **/
 public class CachingSubscriberRegistry {
 
-    private final @Getter KafkaSubscribeConfiguration config;
+    private final @Getter SubscribeConfiguration config;
     private final @Getter SubscribeEngineCustomizer customizer;
     private final Map<String, Map<String, SubscriberInfo>> registry;
 
-    public CachingSubscriberRegistry(KafkaSubscribeConfiguration config,
+    public CachingSubscriberRegistry(SubscribeConfiguration config,
                                      SubscribeEngineCustomizer customizer) {
         this.config = Assert2.notNullOf(config, "config");
         this.customizer = Assert2.notNullOf(customizer, "customizer");
@@ -61,13 +60,10 @@ public class CachingSubscriberRegistry {
         return obtainWithPipeline(pipelineName).values();
     }
 
-    public void putAll(@NotBlank String pipelineName, Map<String, SubscriberInfo> subscribers) {
-        obtainWithPipeline(pipelineName).putAll(safeMap(subscribers));
-    }
-
     public void putAll(@NotBlank String pipelineName, Collection<SubscriberInfo> subscribers) {
         obtainWithPipeline(pipelineName).putAll(safeList(subscribers)
                 .stream()
+                .map(SubscriberInfo::validate)
                 .collect(toMap(SubscriberInfo::getId, s -> s)));
     }
 

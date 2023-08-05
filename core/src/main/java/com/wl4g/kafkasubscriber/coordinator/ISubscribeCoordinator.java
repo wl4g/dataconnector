@@ -17,6 +17,7 @@
 
 package com.wl4g.kafkasubscriber.coordinator;
 
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.SubscribeEvent;
 import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -53,6 +54,8 @@ public interface ISubscribeCoordinator extends ApplicationRunner, Runnable, Auto
     }
 
     void onDiscovery(List<ServiceInstance> instances);
+
+    void onEvent(SubscribeEvent event);
 
     @Getter
     @Setter

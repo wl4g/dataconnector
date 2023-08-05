@@ -17,7 +17,7 @@
 package com.wl4g.kafkasubscriber.sink;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSinkConfig;
 import lombok.Getter;
 import lombok.Setter;
 

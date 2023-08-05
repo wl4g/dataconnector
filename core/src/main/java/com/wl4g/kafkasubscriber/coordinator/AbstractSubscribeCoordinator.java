@@ -18,14 +18,18 @@
 package com.wl4g.kafkasubscriber.coordinator;
 
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.AddSubscribeEvent;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.RemoveSubscribeEvent;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.SubscribeEvent;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.UpdateSubscribeEvent;
 import com.wl4g.kafkasubscriber.coordinator.strategy.IShardingStrategy;
 import com.wl4g.kafkasubscriber.coordinator.strategy.ShardingStrategyFactory;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
-import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 
 import java.util.Collections;
 import java.util.List;
@@ -34,7 +38,6 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
-import static java.util.stream.Collectors.toMap;
 
 /**
  * The {@link AbstractSubscribeCoordinator}
@@ -48,9 +51,10 @@ public abstract class AbstractSubscribeCoordinator implements ISubscribeCoordina
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
-    private @Autowired KafkaSubscribeConfiguration config;
-    private @Autowired SubscribeEngineCustomizer customizer;
-    private @Autowired CachingSubscriberRegistry registry;
+    protected @Autowired Environment environment;
+    protected @Autowired SubscribeConfiguration config;
+    protected @Autowired SubscribeEngineCustomizer customizer;
+    protected @Autowired CachingSubscriberRegistry registry;
 
     private Thread thread;
 
@@ -92,6 +96,24 @@ public abstract class AbstractSubscribeCoordinator implements ISubscribeCoordina
         updateSubscribers(instances);
     }
 
+    @Override
+    public void onEvent(SubscribeEvent event) {
+        if (event instanceof AddSubscribeEvent) {
+            log.info("Adding subscribe event: {}", event);
+            getRegistry().putAll(event.getPipelineName(), safeList(((AddSubscribeEvent) event).getSubscribers()));
+        } else if (event instanceof UpdateSubscribeEvent) {
+            log.info("Updating subscribe event: {}", event);
+            getRegistry().putAll(event.getPipelineName(), safeList(((UpdateSubscribeEvent) event).getSubscribers()));
+        } else if (event instanceof RemoveSubscribeEvent) {
+            log.info("Removing subscribe event: {}", event);
+            safeList(((RemoveSubscribeEvent) event).getSubscriberIds()).forEach(subscriberId -> {
+                getRegistry().remove(event.getPipelineName(), subscriberId);
+            });
+        } else {
+            log.warn("Unsupported subscribe event type of: {}", event);
+        }
+    }
+
     protected void updateSubscribers(List<ServiceInstance> instances) {
         // Find the self service instance.
         final ServiceInstance self = instances.stream()
@@ -99,8 +121,8 @@ public abstract class AbstractSubscribeCoordinator implements ISubscribeCoordina
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No self service instance found."));
 
-        // TODO using configurable sharding type
-        final IShardingStrategy strategy = ShardingStrategyFactory.getStrategy("AVG_SHARDING");
+        final IShardingStrategy strategy = ShardingStrategyFactory.getStrategy(config.getCoordinator()
+                .getShardingStrategy());
 
         final int shardingTotal = instances.size();
         final Map<ServiceInstance, List<Integer>> sharding = strategy.getShardingItem(shardingTotal, instances);
@@ -115,9 +137,7 @@ public abstract class AbstractSubscribeCoordinator implements ISubscribeCoordina
                     pipeline.getName(), sharding, assignedSubscribers.size(), assignedSubscribers);
 
             registry.remove(pipeline.getName());
-            registry.putAll(pipeline.getName(), assignedSubscribers
-                    .stream()
-                    .collect(toMap(SubscriberInfo::getId, s -> s)));
+            registry.putAll(pipeline.getName(), assignedSubscribers);
         });
 
     }

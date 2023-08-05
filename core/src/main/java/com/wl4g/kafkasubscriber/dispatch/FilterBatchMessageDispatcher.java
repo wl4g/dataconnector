@@ -20,10 +20,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeExecutorConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeExecutorConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSourceConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.exception.GiveUpRetryExecutionException;
@@ -98,7 +98,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private final Map<String, List<Producer<String, String>>> checkpointProducersMap;
     private final Producer<String, String> acknowledgeProducer;
 
-    public FilterBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+    public FilterBatchMessageDispatcher(SubscribeConfiguration config,
                                         SubscribeEnginePipelineConfig pipelineConfig,
                                         SubscribeSourceConfig subscribeSourceConfig,
                                         SubscribeEngineCustomizer customizer,
@@ -328,8 +328,7 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
         // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        subscribeFilter.updateMergeConditions(subscribers, Duration.ofMillis(subscribeSourceConfig
-                .getUpdateMergeConditionsDelayTime()).toNanos());
+        subscribeFilter.updateMergeConditions(subscribers);
 
         return safeList(records).parallelStream().map(r ->
                         safeList(subscribers)
@@ -477,14 +476,14 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
         final SubscriberInfo subscriber = record.getSubscriber();
         final String key = record.getRecord().key();
-        return determineTaskExecutor(subscriber.getId(), subscriber.getSettings().getIsSequence(), key);
+        return determineTaskExecutor(subscriber.getId(), subscriber.getRule().getIsSequence(), key);
     }
 
     private Producer<String, String> determineKafkaProducer(SubscriberInfo subscriber, String key) {
         final List<Producer<String, String>> checkpointProducers = obtainFilteredCheckpointProducers(subscriber);
         final int producerSize = checkpointProducers.size();
         Producer<String, String> producer = checkpointProducers.get(RandomUtils.nextInt(0, producerSize));
-        if (Objects.nonNull(subscriber.getSettings().getIsSequence()) && subscriber.getSettings().getIsSequence()) {
+        if (Objects.nonNull(subscriber.getRule().getIsSequence()) && subscriber.getRule().getIsSequence()) {
             //final int mod = (int) subscriber.getId();
             final int mod = (int) Crc32Util.compute(key);
             final int index = producerSize % mod;
@@ -504,21 +503,23 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
     private List<Producer<String, String>> obtainFilteredCheckpointProducers(SubscriberInfo subscriber) {
         final int maxCountLimit = pipelineConfig.getParsedFilter().getFilterConfig().getCheckpoint().getProducerMaxCountLimit();
 
-        return checkpointProducersMap.computeIfAbsent(subscriber.getTenantId(), tenantId -> {
+        // TODO ecah subscriber tenant a producer???
+        final String tenantId = subscriber.getRule().getPolicies().get(0).getTenantId();
+        return checkpointProducersMap.computeIfAbsent(tenantId, tid -> {
             log.info("{} :: Creating filtered checkpoint producers...", groupId);
 
             // Find the source config by subscriber tenantId.
-            final SubscribeSourceConfig tenantSourceConfig =
-                    customizer.loadSourceByTenant(pipelineConfig.getName(), subscriber.getTenantId());
+            final SubscribeSourceConfig tenantSourceConfig = customizer.loadSourceByTenant(
+                    pipelineConfig.getName(), tenantId);
             if (Objects.isNull(tenantSourceConfig)) {
                 throw new KafkaSubscribeException(String.format("%s :: Could not found source config by tenantId: %s",
-                        groupId, subscriber.getTenantId()));
+                        groupId, tenantId));
             }
 
             final Properties producerProps = (Properties) pipelineConfig.getParsedFilter()
                     .getFilterConfig().getCheckpoint().getProducerProps().clone();
             producerProps.putIfAbsent(BOOTSTRAP_SERVERS_CONFIG, tenantSourceConfig.getRequiredBootstrapServers());
-            // TODO support more serializer(e.g bytes,protobuf,arrow)
+            // TODO support more serializer(e.g bytes,protobuf,avro(not arrow))
             producerProps.putIfAbsent(KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
             producerProps.putIfAbsent(VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
@@ -547,8 +548,8 @@ public class FilterBatchMessageDispatcher extends AbstractBatchMessageDispatcher
 
         final ProducerRecord<String, String> _record = new ProducerRecord<>(filteredTopic, key, value.toString());
         // Notice: Hand down the subscriber metadata of each record to the downstream.
-        _record.headers().add(new RecordHeader(KEY_SUBSCRIBER_ID, String.valueOf(subscriber.getId()).getBytes()));
-        _record.headers().add(new RecordHeader(KEY_IS_SEQUENCE, String.valueOf(subscriber.getSettings().getIsSequence()).getBytes()));
+        _record.headers().add(new RecordHeader(KEY_TENANT, String.valueOf(subscriber.getId()).getBytes()));
+        _record.headers().add(new RecordHeader(KEY_SEQUENCE, String.valueOf(subscriber.getRule().getIsSequence()).getBytes()));
 
         return new CheckpointSentResult(record, producer, producer.send(_record), retryBegin, retryTimes);
     }

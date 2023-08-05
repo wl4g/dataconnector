@@ -27,7 +27,13 @@ import lombok.ToString;
 import lombok.experimental.SuperBuilder;
 import org.springframework.util.unit.DataSize;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Null;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -45,16 +51,15 @@ public class SubscriberInfo {
     private String id;
     private String name;
     private @Default boolean enable = true;
-    private String tenantId;
-    private @Builder.Default SubscribeSettings settings = new SubscribeSettings();
+    private @Builder.Default SubscribeRule rule = new SubscribeRule();
 
-    public void validate() {
+    public SubscriberInfo validate() {
         Assert2.notNullOf(id, "id");
         Assert2.hasTextOf(name, "name");
-        Assert2.hasTextOf(tenantId, "tenantId");
         Assert2.notNullOf(enable, "enable");
-        Assert2.notNullOf(settings, "settings");
-        this.settings.validate();
+        Assert2.notNullOf(rule, "settings");
+        this.rule.validate();
+        return this;
     }
 
     @Getter
@@ -62,16 +67,47 @@ public class SubscriberInfo {
     @SuperBuilder
     @ToString(callSuper = true)
     @NoArgsConstructor
-    public static class SubscribeSettings {
-        private @Builder.Default Boolean isSequence = false;
-        private @Builder.Default Duration logRetentionTime = Duration.ofDays(3);
-        private @Builder.Default DataSize logRetentionBytes = DataSize.ofMegabytes(512);
-        private @Builder.Default Properties properties = new Properties();
+    public static class SubscribeRule {
+        @NotNull
+        @Builder.Default
+        private Boolean isSequence = false;
+        @NotEmpty
+        @Builder.Default
+        private List<SubscribeGrantedPolicy> policies = new ArrayList<>(2);
+        @NotNull
+        @Builder.Default
+        private Duration logRetentionTime = Duration.ofDays(3);
+        @NotNull
+        @Builder.Default
+        private DataSize logRetentionBytes = DataSize.ofMegabytes(512);
+        @Null
+        private Properties properties;
 
         public void validate() {
             Assert2.notNullOf(isSequence, "isSequence");
-            Assert2.notNullOf(properties, "properties");
+            Assert2.notEmptyOf(policies, "policies");
+
+            // The current subscriber is only allowed to belong to one tenant.
+            //final long thisTenantPolicies = safeList(getPolicies()).stream()
+            //        .filter(SubscribeGrantedPolicy::isSelfTenant).count();
+            //Assert2.isTrue(thisTenantPolicies <= 1, "The current subscriber " +
+            //        "is only allowed to belong to one tenant or all other tenants.");
         }
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString(callSuper = true)
+    @NoArgsConstructor
+    public static class SubscribeGrantedPolicy {
+        @NotBlank
+        private String tenantId;
+        //private boolean selfTenant;
+        @NotBlank
+        private String recordFilter;
+        @Null
+        private String fieldFilter;
     }
 
 }
