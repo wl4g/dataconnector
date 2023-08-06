@@ -34,9 +34,11 @@ import java.util.Map;
  **/
 public class AverageShardingStrategy implements IShardingStrategy {
 
+    public static final String TYPE = "AVG_SHARDING";
+
     @Override
     public String getType() {
-        return "AVG_SHARDING";
+        return TYPE;
     }
 
     @Override

@@ -19,6 +19,9 @@ package com.wl4g.kafkasubscriber.config;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.bean.TenantInfo;
+import com.wl4g.kafkasubscriber.coordinator.KafkaSubscribeCoordinator.KafkaCoordinatorConfigConfig;
+import com.wl4g.kafkasubscriber.coordinator.KafkaSubscribeCoordinator.KafkaCoordinatorDiscoveryConfig;
+import com.wl4g.kafkasubscriber.coordinator.strategy.AverageShardingStrategy;
 import com.wl4g.kafkasubscriber.filter.DefaultRecordMatchSubscribeFilter;
 import com.wl4g.kafkasubscriber.filter.ISubscribeFilter;
 import com.wl4g.kafkasubscriber.sink.DefaultPrintSubscribeSink;
@@ -64,7 +67,7 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 
 /**
- * The {@link KafkaSubscribeConfiguration}
+ * The {@link SubscribeConfiguration}
  *
  * @author James Wong
  * @since v1.0
@@ -74,13 +77,14 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZE
 @Setter
 @SuperBuilder
 @ToString
-public class KafkaSubscribeConfiguration implements InitializingBean {
+public class SubscribeConfiguration implements InitializingBean {
     private final ApplicationContext context;
 
     private @Builder.Default SubscribeDefinitionConfig definitions = new SubscribeDefinitionConfig();
+    private @Builder.Default SubscribeCoordinatorConfig coordinator = new SubscribeCoordinatorConfig();
     private @Builder.Default List<SubscribeEnginePipelineConfig> pipelines = new ArrayList<>(1);
 
-    public KafkaSubscribeConfiguration(ApplicationContext context) {
+    public SubscribeConfiguration(ApplicationContext context) {
         this.context = Assert2.notNullOf(context, "context");
     }
 
@@ -96,7 +100,11 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
     }
 
     private void beforeValidate() {
+        Assert2.notNullOf(definitions, "definitions");
+        Assert2.notNullOf(coordinator, "coordinator");
+        Assert2.notNullOf(pipelines, "pipelines");
         definitions.validate();
+        coordinator.validate();
         pipelines.forEach(SubscribeEnginePipelineConfig::validate);
     }
 
@@ -220,41 +228,12 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
 
     }
 
-    // ----- Pipelines configuration. -----
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString
-    @NoArgsConstructor
-    public static class SubscribeEnginePipelineConfig {
-        private String name;
-        private @Builder.Default boolean enable = true;
-        private String source;
-        private String filter;
-        private String sink;
-        //
-        // Parsed to transient properties.
-        //
-        private transient @NotNull ISubscribeSourceProvider parsedSourceProvider;
-        private transient @NotBlank ISubscribeFilter parsedFilter;
-        private transient @Null ISubscribeSink parsedSink;
-
-        public void validate() {
-            Assert2.hasTextOf(name, "name");
-            Assert2.hasTextOf(source, "source");
-            Assert2.hasTextOf(filter, "filter");
-            Assert2.hasTextOf(sink, "sink");
-        }
-    }
-
     @Getter
     @Setter
     @SuperBuilder
     @ToString
     public static class SubscribeSourceConfig extends BaseConsumerConfig {
         private String topicPattern;
-        private @Builder.Default Long updateMergeConditionsDelayTime = 3_000L;
 
         public SubscribeSourceConfig() {
             getConsumerProps().put(ConsumerConfig.GROUP_ID_CONFIG, "shared_source_0");
@@ -554,6 +533,54 @@ public class KafkaSubscribeConfiguration implements InitializingBean {
             return Arrays.asList(qos).contains(this);
         }
 
+    }
+
+    // ----- Pipelines configuration. -----
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class SubscribeEnginePipelineConfig {
+        private String name;
+        private @Builder.Default boolean enable = true;
+        private String source;
+        private String filter;
+        private String sink;
+        //
+        // Parsed to transient properties.
+        //
+        private transient @NotNull ISubscribeSourceProvider parsedSourceProvider;
+        private transient @NotBlank ISubscribeFilter parsedFilter;
+        private transient @Null ISubscribeSink parsedSink;
+
+        public void validate() {
+            Assert2.hasTextOf(name, "name");
+            Assert2.hasTextOf(source, "source");
+            Assert2.hasTextOf(filter, "filter");
+            Assert2.hasTextOf(sink, "sink");
+        }
+    }
+
+    // ----- Coordinator configuration. -----
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class SubscribeCoordinatorConfig {
+        private @Builder.Default String shardingStrategy = AverageShardingStrategy.TYPE;
+        private @Builder.Default String bootstrapServers = "localhost:9092";
+        private @Builder.Default KafkaCoordinatorConfigConfig configConfig = new KafkaCoordinatorConfigConfig();
+        private @Builder.Default KafkaCoordinatorDiscoveryConfig discoveryConfig = new KafkaCoordinatorDiscoveryConfig();
+
+        public void validate() {
+            Assert2.hasTextOf(shardingStrategy, "shardingStrategy");
+            Assert2.notNullOf(configConfig, "configConfig");
+            Assert2.notNullOf(discoveryConfig, "discoveryConfig");
+        }
     }
 
 }

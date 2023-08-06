@@ -18,9 +18,9 @@ package com.wl4g.kafkasubscriber.dispatch;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.CheckpointConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.CheckpointConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeEnginePipelineConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter.MetricsName;
@@ -51,7 +51,7 @@ import static java.lang.System.getenv;
 public abstract class AbstractBatchMessageDispatcher
         implements BatchAcknowledgingMessageListener<String, ObjectNode>, Closeable {
 
-    protected final KafkaSubscribeConfiguration config;
+    protected final SubscribeConfiguration config;
     protected final SubscribeEnginePipelineConfig pipelineConfig;
     protected final SubscribeEngineCustomizer customizer;
     protected final CachingSubscriberRegistry registry;
@@ -59,7 +59,7 @@ public abstract class AbstractBatchMessageDispatcher
     protected final String topicDesc;
     protected final String groupId;
 
-    public AbstractBatchMessageDispatcher(KafkaSubscribeConfiguration config,
+    public AbstractBatchMessageDispatcher(SubscribeConfiguration config,
                                           SubscribeEnginePipelineConfig pipelineConfig,
                                           SubscribeEngineCustomizer customizer,
                                           CachingSubscriberRegistry registry,
@@ -119,11 +119,8 @@ public abstract class AbstractBatchMessageDispatcher
                 || (System.nanoTime() - retryBegin) > Duration.ofMillis(checkpoint.getQoSMaxRetriesTimeout()).toNanos());
     }
 
-    public static final String KEY_SUBSCRIBER_ID = getenv().getOrDefault("INTERNAL_SUBSCRIBER_ID", "$$sub");
-    public static final String KEY_IS_SEQUENCE = getenv().getOrDefault("INTERNAL_IS_SEQUENCE", "$$seq");
+    public static final String KEY_TENANT = getenv().getOrDefault("INTERNAL_TENANT_ID", "$$tenant");
+    public static final String KEY_SEQUENCE = getenv().getOrDefault("INTERNAL_IS_SEQUENCE", "$$seq");
 
 }
-
-
-
 

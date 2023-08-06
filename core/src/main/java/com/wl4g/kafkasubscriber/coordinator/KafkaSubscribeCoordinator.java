@@ -17,24 +17,31 @@
 
 package com.wl4g.kafkasubscriber.coordinator;
 
-import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher.AddSubscribeEvent;
-import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher.RemoveSubscribeEvent;
-import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher.SubscribeEvent;
-import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher.UpdateSubscribeEvent;
+import com.wl4g.infra.common.lang.SystemUtils2;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher.SubscribeEvent;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.RangeAssignor;
+import org.apache.kafka.clients.consumer.internals.NoOpConsumerRebalanceListener;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -45,6 +52,7 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.serialize.JacksonUtils.parseJSON;
 import static java.util.Collections.singleton;
 import static java.util.stream.Collectors.toList;
+import static org.apache.commons.lang3.RandomUtils.nextInt;
 
 /**
  * The {@link KafkaSubscribeCoordinator}
@@ -55,94 +63,96 @@ import static java.util.stream.Collectors.toList;
 @Slf4j
 public class KafkaSubscribeCoordinator extends AbstractSubscribeCoordinator {
 
-    public static final String SUBSCRIBE_COORDINATOR_TOPIC = "subscribe-coordinator-topic";
-    public static final String SUBSCRIBE_COORDINATOR_GROUP = "subscribe-coordinator-group";
-    public static final String SUBSCRIBE_COORDINATOR_CLIENT_ID = String.format("subscribe-coordinator-client-id-%s", RandomUtils.nextInt(1000000, 9999999));
+    public static final String SUBSCRIBE_COORDINATOR_DISCOVERY_CLIENT_ID = String.format(
+            "subscribe-coordinator-discovery-clientId-%s", nextInt(1_000_000, 99_999_999)); // duplicate rate: 0.01%
 
-    private KafkaConsumer<String, String> consumer;
-    private AdminClient adminClient;
+    private KafkaConsumer<String, String> configConsumer;
+    private KafkaConsumer<String, String> discoveryConsumer;
+    private AdminClient discoveryAdminClient;
 
     @Override
     protected void init() {
+        initCoordinatorConfig();
+        initCoordinatorDiscovery();
+    }
+
+    protected void initCoordinatorConfig() {
+        log.info("Initializing subscribe coordinator config consumer ...");
+        final KafkaCoordinatorConfigConfig configConfig = config.getCoordinator().getConfigConfig();
+
         final Properties props = new Properties();
-        // TODO config!!!
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-        props.put(ConsumerConfig.CLIENT_ID_CONFIG, SUBSCRIBE_COORDINATOR_CLIENT_ID);
-        props.put(ConsumerConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
-        props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-        props.put(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, "100");
-        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "45000");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        // TODO 此分配器还是不能保证按照不同 Pod 的多个 consumers 隔离分配不同的 partitions，
-        // TODO 因此无法严格实现保序 ??? (还是有概率被 brokers 将某个 partition 分配给了 2 个 Pod 的 consumer)
-        props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RangeAssignor.class.getName());
-        // This consumer is used for consumption dynamic configuration similar to spring cloud config bus kafka,
-        // so read isolation should be used to ensure consistency.
-        props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, IsolationLevel.READ_COMMITTED.name().toLowerCase());
+        props.putAll(configConfig.getConsumerProps());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getCoordinator().getBootstrapServers());
+        // The one groupId per consumer.(broadcast)
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, generateBroadcastGroupId());
+        this.configConsumer = new KafkaConsumer<>(props);
+        this.configConsumer.assign(singleton(new TopicPartition(configConfig.getTopic(), 0)));
 
-        this.consumer = new KafkaConsumer<>(props);
-        this.consumer.assign(singleton(new TopicPartition(SUBSCRIBE_COORDINATOR_TOPIC, 0)));
+        // TODO custom re-balancing listener?
+        this.configConsumer.subscribe(singleton(configConfig.getTopic()), new NoOpConsumerRebalanceListener());
+    }
 
-        this.consumer.subscribe(singleton(SUBSCRIBE_COORDINATOR_TOPIC), new ConsumerRebalanceListener() {
+    protected void initCoordinatorDiscovery() {
+        log.info("Initializing subscribe coordinator discovery consumer ...");
+        final KafkaCoordinatorConfigConfig configConfig = config.getCoordinator().getConfigConfig();
+        final KafkaCoordinatorDiscoveryConfig discoveryConfig = config.getCoordinator().getDiscoveryConfig();
+
+        final Properties props = new Properties();
+        props.putAll(discoveryConfig.getConsumerProps());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getCoordinator().getBootstrapServers());
+        this.discoveryConsumer = new KafkaConsumer<>(props);
+        this.discoveryConsumer.assign(singleton(new TopicPartition(configConfig.getTopic(), 0)));
+
+        this.discoveryConsumer.subscribe(singleton(configConfig.getTopic()), new ConsumerRebalanceListener() {
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-                doOnReBalancing();
+                doReBalanceForDiscovery();
             }
 
             @Override
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-                doOnReBalancing();
+                doReBalanceForDiscovery();
             }
         });
 
-        // TODO using configuration
-        this.adminClient = KafkaUtil.createAdminClient("localhost:9092");
+        log.info("Initializing subscribe coordinator admin client ...");
+
+        final Properties adminProps = new Properties();
+        adminProps.putAll(discoveryConfig.getAdminProps());
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.getCoordinator().getBootstrapServers());
+        this.discoveryAdminClient = KafkaUtil.createAdminClient(adminProps);
+    }
+
+    private String generateBroadcastGroupId() {
+        return String.format("subscribe-coordinator-config-%s-%s",
+                SystemUtils2.getHostName(), environment.getRequiredProperty("server.port"));
     }
 
     @Override
     public void doRun() {
         while (getRunning().get()) {
-            final ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(800L));
+            final ConsumerRecords<String, String> records = configConsumer.poll(Duration.ofMillis(800L));
             log.debug("Received subscribe event records: {}", records);
 
-            records.forEach(record -> {
-                //final String key = record.key();
-                final SubscribeEvent event = parseJSON(record.value(), SubscribeEvent.class);
+            records.forEach(record -> super.onEvent(parseJSON(record.value(), SubscribeEvent.class)));
 
-                if (event instanceof AddSubscribeEvent) {
-                    log.info("Adding subscribe event: {}", event);
-                    getRegistry().putAll(event.getPipelineName(), safeList(((AddSubscribeEvent) event).getSubscribers()));
-                } else if (event instanceof UpdateSubscribeEvent) {
-                    log.info("Updating subscribe event: {}", event);
-                    getRegistry().putAll(event.getPipelineName(), safeList(((UpdateSubscribeEvent) event).getSubscribers()));
-                } else if (event instanceof RemoveSubscribeEvent) {
-                    log.info("Removing subscribe event: {}", event);
-                    safeList(((RemoveSubscribeEvent) event).getSubscriberIds()).forEach(subscriberId -> {
-                        getRegistry().remove(event.getPipelineName(), subscriberId);
-                    });
-                } else {
-                    log.warn("Unsupported subscribe event type of: {}", event);
-                }
-            });
-
-            // TODO using sync or callback?
-            this.consumer.commitAsync();
+            // TODO using async or callback?
+            this.configConsumer.commitSync();
         }
     }
 
-    private void doOnReBalancing() {
+    private void doReBalanceForDiscovery() {
         try {
-            final List<MemberDescription> members = safeList(KafkaUtil.getGroupConsumers(adminClient,
-                    SUBSCRIBE_COORDINATOR_GROUP, 6000L));
+            final KafkaCoordinatorDiscoveryConfig discoveryConfig = config.getCoordinator().getDiscoveryConfig();
+
+            final List<MemberDescription> members = safeList(KafkaUtil.getGroupConsumers(discoveryAdminClient,
+                    discoveryConfig.getGroupId(), 6000L)); // TODO timeout
 
             final List<ServiceInstance> instances = members
                     .stream()
                     .map(member -> ServiceInstance.builder()
                             .instanceId(member.clientId())
-                            .selfInstance(StringUtils.equals(member.clientId(), SUBSCRIBE_COORDINATOR_CLIENT_ID))
+                            .selfInstance(StringUtils.equals(member.clientId(), SUBSCRIBE_COORDINATOR_DISCOVERY_CLIENT_ID))
                             .host(member.host()).build())
                     .collect(toList());
 
@@ -150,6 +160,99 @@ public class KafkaSubscribeCoordinator extends AbstractSubscribeCoordinator {
         } catch (Throwable th) {
             log.error("Failed to do on re-balancing discovery", th);
         }
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class KafkaCoordinatorConfigConfig {
+
+        public static final String DEFAULT_CONFIG_PRODUCER_TX_ID = "subscribe_coordinator_config_tx_id";
+
+        private @Builder.Default String topic = "subscribe_coordinator_config_topic";
+
+        private @Builder.Default Properties producerProps = new Properties() {
+            {
+                //setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "");
+                //setProperty(ProducerConfig.CLIENT_ID_CONFIG, "");
+                setProperty(ProducerConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
+                setProperty(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+                setProperty(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "100");
+                setProperty(ProducerConfig.SEND_BUFFER_CONFIG, "128");
+                setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip"); // snappy|gzip|lz4|zstd|none
+                setProperty(ProducerConfig.BATCH_SIZE_CONFIG, String.valueOf(16 * 1024));
+                setProperty(ProducerConfig.BUFFER_MEMORY_CONFIG, String.valueOf(32 * 1024 * 1024));
+                setProperty(ProducerConfig.LINGER_MS_CONFIG, "0");
+                setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+                setProperty(ProducerConfig.ACKS_CONFIG, "all");
+                setProperty(ProducerConfig.RETRIES_CONFIG, String.valueOf(Integer.MAX_VALUE));
+                setProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, DEFAULT_CONFIG_PRODUCER_TX_ID);
+                setProperty(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, "60000");
+                setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+                setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+            }
+        };
+
+        private @Builder.Default Properties consumerProps = new Properties() {
+            {
+                //setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "");
+                setProperty(ConsumerConfig.CLIENT_ID_CONFIG, SUBSCRIBE_COORDINATOR_DISCOVERY_CLIENT_ID);
+                setProperty(ConsumerConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
+                setProperty(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+                setProperty(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, "100");
+                setProperty(ConsumerConfig.SEND_BUFFER_CONFIG, "128");
+                setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "45000");
+                setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+                setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+                setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                // 显示指定 Range 分配器确保同一时刻一个 partition 只分配给一个 consumer
+                setProperty(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RangeAssignor.class.getName());
+                // This consumer is used for consumption dynamic configuration similar to spring cloud config bus kafka,
+                // so read isolation should be used to ensure consistency.
+                setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, IsolationLevel.READ_COMMITTED.name().toLowerCase());
+            }
+        };
+    }
+
+    @Getter
+    @Setter
+    @SuperBuilder
+    @ToString
+    @NoArgsConstructor
+    public static class KafkaCoordinatorDiscoveryConfig {
+        private @Builder.Default String groupId = "subscribe_coordinator_discovery_group";
+
+        private @Builder.Default Properties consumerProps = new Properties() {
+            {
+                //setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "");
+                setProperty(ConsumerConfig.CLIENT_ID_CONFIG, SUBSCRIBE_COORDINATOR_DISCOVERY_CLIENT_ID);
+                setProperty(ConsumerConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
+                setProperty(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+                setProperty(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, "100");
+                setProperty(ConsumerConfig.SEND_BUFFER_CONFIG, "128");
+                setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "45000");
+                setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+                setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+                setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+                // 显示指定 Range 分配器确保同一时刻一个 partition 只分配给一个 consumer
+                setProperty(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RangeAssignor.class.getName());
+                // This consumer is used for consumption dynamic configuration similar to spring cloud config bus kafka,
+                // so read isolation should be used to ensure consistency.
+                setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, IsolationLevel.READ_COMMITTED.name().toLowerCase());
+            }
+        };
+
+        private @Builder.Default Properties adminProps = new Properties() {
+            {
+                //setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "");
+                setProperty(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
+                setProperty(AdminClientConfig.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG, "10000");
+            }
+        };
     }
 
 }

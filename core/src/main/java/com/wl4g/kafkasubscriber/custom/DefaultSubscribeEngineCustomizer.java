@@ -19,8 +19,8 @@ package com.wl4g.kafkasubscriber.custom;
 
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.bean.TenantInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSourceConfig;
 import com.wl4g.kafkasubscriber.coordinator.ISubscribeCoordinator;
 import com.wl4g.kafkasubscriber.exception.KafkaSubscribeException;
 import com.wl4g.kafkasubscriber.source.ISubscribeSourceProvider;
@@ -32,9 +32,10 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Null;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static java.util.stream.Collectors.toList;
 
 /**
  * The {@link DefaultSubscribeEngineCustomizer}
@@ -45,21 +46,21 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 @AllArgsConstructor
 public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomizer {
 
-    private final KafkaSubscribeConfiguration config;
+    private final SubscribeConfiguration config;
 
     @Override
     public List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
                                                 @Null ISubscribeCoordinator.ShardingInfo sharding) {
+        Predicate<SubscriberInfo> predicate = s -> true;
         if (Objects.nonNull(sharding)) {
-            return safeList(config.getDefinitions().getSubscribers())
-                    .stream()
-                    .filter(s -> sharding.getItems().contains(sharding.getTotal() % (int) Crc32Util.compute(s.getId())))
-                    .collect(Collectors.toList());
+            predicate = s -> safeList(sharding.getItems())
+                    .contains(sharding.getTotal() % (int) Crc32Util.compute(s.getId()));
         }
         return safeList(config.getDefinitions().getSubscribers())
                 .stream()
                 .filter(SubscriberInfo::isEnable)
-                .collect(Collectors.toList());
+                .filter(predicate)
+                .collect(toList());
     }
 
     @Override
@@ -78,7 +79,7 @@ public class DefaultSubscribeEngineCustomizer implements SubscribeEngineCustomiz
                 .orElseThrow(() -> new KafkaSubscribeException(String.format("Not found pipeline '%s'", pipelineName)))
                 .getParsedSourceProvider();
 
-        // Getting the source config of the tenant.
+        // Getting the source config by tenant.
         return safeList(sourceProvider.loadSources(pipelineName))
                 .stream()
                 .filter(s -> StringUtils.equals(s.getName(), tenant.getSourceName()))

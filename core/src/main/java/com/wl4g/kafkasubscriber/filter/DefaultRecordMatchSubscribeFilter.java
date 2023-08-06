@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.serialize.JacksonUtils;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator;
+import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator.LogicalOperator;
+import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator.LogicalType;
+import com.wl4g.kafkasubscriber.util.expression.ExpressionOperator.OperatorType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -64,31 +67,39 @@ public class DefaultRecordMatchSubscribeFilter extends AbstractSubscribeFilter {
     }
 
     @Override
-    public void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime) {
-        if (Math.abs(System.nanoTime()) - lastUpdateTime.get() > delayTime) {
-            log.info("- :: {} :: Update default record matching operator config.", TYPE_NAME);
+    public void updateMergeConditions(Collection<SubscriberInfo> subscribers) {
+        if (Math.abs(System.nanoTime()) - lastUpdateTime.get() > getUpdateMergeConditionsDelayTime()) {
+            log.debug("- :: {} :: Update default record matching operator config.", getName());
             lastUpdateTime.set(System.nanoTime());
+
             doUpdateMergeConditions(subscribers);
         } else {
-            log.info("- :: {} :: Skip update default record matching operator config.", TYPE_NAME);
+            log.debug("- :: {} :: Skip update default record matching operator config.", getName());
         }
     }
 
     private void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers) {
-        final ExpressionOperator.LogicalOperator rootOperator = new ExpressionOperator.LogicalOperator();
+        final LogicalOperator rootOperator = new LogicalOperator();
         rootOperator.setName("__ROOT_OPERATOR__");
-        rootOperator.setType(ExpressionOperator.OperatorType.LOGICAL.name());
-        rootOperator.setLogical(ExpressionOperator.LogicalType.OR);
+        rootOperator.setType(OperatorType.LOGICAL.name());
+        rootOperator.setLogical(LogicalType.OR);
 
-        // Merge to all subscriber filter conditions to root operator condition.
-        final List<ExpressionOperator> subConditions = safeList(subscribers).stream().map(s -> {
-            final String exprJson = s.getSettings().getProperties().getProperty(getName());
-            if (StringUtils.isBlank(exprJson)) {
-                throw new IllegalArgumentException(String.format("Could not match expression filter named '%s' was found from the subscriber '%s' properties",
-                        getName(), s.getId()));
-            }
-            return JacksonUtils.parseJSON(exprJson, ExpressionOperator.class);
-        }).collect(Collectors.toList());
+        // Merge to all subscriber filter conditions.
+        final List<ExpressionOperator> subConditions = safeList(subscribers)
+                .stream()
+                .flatMap(s ->
+                        // Merge multiple conditions for each subscriber (granted policies, may is cross tenant)
+                        safeList(s.getRule().getPolicies())
+                                .stream()
+                                .map(sga -> {
+                                    if (StringUtils.isBlank(sga.getRecordFilter())) {
+                                        throw new IllegalArgumentException(String.format("Could not match expression filter " +
+                                                "named '%s' was found from the subscriber '%s' properties", getName(), s.getId()));
+                                    }
+                                    return JacksonUtils.parseJSON(sga.getRecordFilter(), ExpressionOperator.class);
+                                })
+                                .filter(Objects::nonNull))
+                .collect(Collectors.toList());
 
         rootOperator.setSubConditions(subConditions);
 

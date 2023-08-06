@@ -18,7 +18,7 @@ package com.wl4g.kafkasubscriber.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeFilterConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.util.Collection;
@@ -49,6 +49,6 @@ public interface ISubscribeFilter {
         return record;
     }
 
-    void updateMergeConditions(Collection<SubscriberInfo> subscribers, long delayTime);
+    void updateMergeConditions(Collection<SubscriberInfo> subscribers);
 
 }

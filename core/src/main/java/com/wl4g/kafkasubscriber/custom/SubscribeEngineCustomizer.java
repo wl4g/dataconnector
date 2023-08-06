@@ -17,27 +17,26 @@
 
 package com.wl4g.kafkasubscriber.custom;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.bean.SubscriberInfo.SubscribeGrantedPolicy;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSourceConfig;
 import com.wl4g.kafkasubscriber.coordinator.ISubscribeCoordinator.ShardingInfo;
 import com.wl4g.kafkasubscriber.dispatch.FilterBatchMessageDispatcher;
 import com.wl4g.kafkasubscriber.util.KafkaUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.header.Header;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
-import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.KEY_SUBSCRIBER_ID;
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.kafkasubscriber.dispatch.AbstractBatchMessageDispatcher.KEY_TENANT;
 
 /**
  * The {@link SubscribeEngineCustomizer}
@@ -60,20 +59,26 @@ public interface SubscribeEngineCustomizer {
         Assert2.notNullOf(subscriber, "subscriber");
         Assert2.notNullOf(record, "record");
 
-        // Notice: By default, the $subscriberId field of the source message match, which should be customized
+        // Notice: By default, the $$tenant field of the source message match, which should be customized
         // to match the subscriber relationship corresponding to each record in the source consume topic.
         if (Objects.nonNull(record.value())) {
             // Priority match with message header.
-            final Iterator<Header> it = record.headers().headers("$$subscriber").iterator();
-            if (it.hasNext()) {
-                // match first only
-                final String first = KafkaUtil.getFirstValueAsString(record.headers(),
-                        FilterBatchMessageDispatcher.KEY_SUBSCRIBER_ID);
-                return StringUtils.equals(first, subscriber.getId());
+            final String tenantId1 = KafkaUtil.getFirstValueAsString(record.headers(), // match first only
+                    FilterBatchMessageDispatcher.KEY_TENANT);
+            if (!StringUtils.isBlank(tenantId1)) {
+                return safeList(subscriber.getRule().getPolicies())
+                        .stream()
+                        .map(SubscribeGrantedPolicy::getTenantId)
+                        .anyMatch(tid -> StringUtils.equals(tenantId1, tid));
             }
             // Fallback match with message value.
-            final JsonNode subId = record.value().remove(KEY_SUBSCRIBER_ID);
-            return Objects.nonNull(subId) && StringUtils.equals(subId.textValue(), subscriber.getId());
+            final String tenantId2 = record.value().remove(KEY_TENANT).textValue();
+            if (!StringUtils.isBlank(tenantId2)) {
+                return safeList(subscriber.getRule().getPolicies())
+                        .stream()
+                        .map(SubscribeGrantedPolicy::getTenantId)
+                        .anyMatch(tid -> StringUtils.equals(tenantId2, tid));
+            }
         }
         return false;
     }
@@ -92,7 +97,7 @@ public interface SubscribeEngineCustomizer {
     }
 
     default String generateSinkGroupId(@NotBlank String pipelineName,
-                                       @Null KafkaSubscribeConfiguration.SubscribeSinkConfig subscribeSinkConfig,
+                                       @Null SubscribeConfiguration.SubscribeSinkConfig subscribeSinkConfig,
                                        @Null String subscriberId) {
         Assert2.hasTextOf(pipelineName, "pipelineName");
 

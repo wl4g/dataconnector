@@ -20,10 +20,10 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.kafkasubscriber.bean.SubscriberInfo;
 import com.wl4g.kafkasubscriber.config.KafkaConsumerBuilder;
 import com.wl4g.kafkasubscriber.config.KafkaProducerBuilder;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.BaseConsumerConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeFilterConfig;
-import com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSourceConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.BaseConsumerConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeFilterConfig;
+import com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSourceConfig;
 import com.wl4g.kafkasubscriber.coordinator.CachingSubscriberRegistry;
 import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.sink.ISubscribeSink;
@@ -57,8 +57,8 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.isEmptyArray;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static com.wl4g.infra.common.lang.Assert2.notNullOf;
-import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeEnginePipelineConfig;
-import static com.wl4g.kafkasubscriber.config.KafkaSubscribeConfiguration.SubscribeSinkConfig;
+import static com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeEnginePipelineConfig;
+import static com.wl4g.kafkasubscriber.config.SubscribeConfiguration.SubscribeSinkConfig;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.commons.lang3.StringUtils.equalsAny;
@@ -74,14 +74,14 @@ import static org.apache.commons.lang3.StringUtils.equalsAny;
 public class SubscribeEngineManager implements ApplicationRunner, Closeable {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final KafkaSubscribeConfiguration config;
+    private final SubscribeConfiguration config;
     private final CheckpointTopicManager topicManager;
     private final SubscribeEngineCustomizer customizer;
     private final CachingSubscriberRegistry registry;
     private final ApplicationEventPublisher eventPublisher;
     private final Map<String, SubscribePipelineBootstrap> pipelineRegistry;
 
-    public SubscribeEngineManager(@NotNull KafkaSubscribeConfiguration config,
+    public SubscribeEngineManager(@NotNull SubscribeConfiguration config,
                                   @NotNull CheckpointTopicManager topicManager,
                                   @NotNull SubscribeEngineCustomizer customizer,
                                   @NotNull ApplicationEventPublisher eventPublisher,

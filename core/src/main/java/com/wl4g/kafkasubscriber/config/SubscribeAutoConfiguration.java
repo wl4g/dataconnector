@@ -24,7 +24,7 @@ import com.wl4g.kafkasubscriber.custom.SubscribeEngineCustomizer;
 import com.wl4g.kafkasubscriber.dispatch.CheckpointTopicManager;
 import com.wl4g.kafkasubscriber.dispatch.SubscribeEngineManager;
 import com.wl4g.kafkasubscriber.facade.SubscribeEngineFacade;
-import com.wl4g.kafkasubscriber.facade.SubscribeEventPublisher;
+import com.wl4g.kafkasubscriber.coordinator.SubscribeEventPublisher;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeter;
 import com.wl4g.kafkasubscriber.meter.SubscribeMeterEventHandler;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
@@ -37,40 +37,40 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * The {@link KafkaSubscribeAutoConfiguration}
+ * The {@link SubscribeAutoConfiguration}
  *
  * @author James Wong
  * @since v1.0
  **/
 @Configuration
-public class KafkaSubscribeAutoConfiguration {
+public class SubscribeAutoConfiguration {
 
     @Bean
     @ConfigurationProperties(prefix = "kafka-subscriber")
-    public KafkaSubscribeConfiguration kafkaSubscriberConfiguration(ApplicationContext context) {
-        return new KafkaSubscribeConfiguration(context);
+    public SubscribeConfiguration kafkaSubscriberConfiguration(ApplicationContext context) {
+        return new SubscribeConfiguration(context);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(KafkaSubscribeConfiguration config) {
+    public SubscribeEngineCustomizer defaultSubscribeEngineCustomizer(SubscribeConfiguration config) {
         return new DefaultSubscribeEngineCustomizer(config);
     }
 
     @Bean
-    public SubscribeEventPublisher subscribeEventPublisher(KafkaSubscribeConfiguration config) {
+    public SubscribeEventPublisher subscribeEventPublisher(SubscribeConfiguration config) {
         return new SubscribeEventPublisher(config);
     }
 
     @Bean
-    public SubscribeEngineFacade subscribeEngineFacade(KafkaSubscribeConfiguration config,
+    public SubscribeEngineFacade subscribeEngineFacade(SubscribeConfiguration config,
                                                        SubscribeEngineManager engineManager,
                                                        SubscribeEventPublisher eventPublisher) {
         return new SubscribeEngineFacade(config, engineManager, eventPublisher);
     }
 
     @Bean
-    public SubscribeEngineManager subscribeEngineManager(KafkaSubscribeConfiguration config,
+    public SubscribeEngineManager subscribeEngineManager(SubscribeConfiguration config,
                                                          SubscribeEngineCustomizer customizer,
                                                          CheckpointTopicManager topicManager,
                                                          ApplicationEventPublisher eventPublisher,
@@ -92,7 +92,7 @@ public class KafkaSubscribeAutoConfiguration {
     }
 
     @Bean
-    public CachingSubscriberRegistry cachingSubscriberRegistry(KafkaSubscribeConfiguration config,
+    public CachingSubscriberRegistry cachingSubscriberRegistry(SubscribeConfiguration config,
                                                                SubscribeEngineCustomizer facade) {
         return new CachingSubscriberRegistry(config, facade);
     }
@@ -104,7 +104,7 @@ public class KafkaSubscribeAutoConfiguration {
     }
 
     @Bean
-    public CheckpointTopicManager filteredTopicManager(KafkaSubscribeConfiguration config,
+    public CheckpointTopicManager filteredTopicManager(SubscribeConfiguration config,
                                                        SubscribeEngineCustomizer customizer,
                                                        CachingSubscriberRegistry registry) {
         return new CheckpointTopicManager(config, customizer, registry);
