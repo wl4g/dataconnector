@@ -19,7 +19,7 @@
         <mxCell id="cZVeimrN27QPbhtuJZbX-9" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36393d;" parent="1" vertex="1">
           <mxGeometry x="180" y="-360" width="400" height="660" as="geometry" />
         </mxCell>
-        <mxCell id="cZVeimrN27QPbhtuJZbX-10" value="pod/kafka-subscriber-0" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" parent="1" vertex="1">
+        <mxCell id="cZVeimrN27QPbhtuJZbX-10" value="pod/stream-connect-0" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" parent="1" vertex="1">
           <mxGeometry x="126" y="-396" width="152" height="30" as="geometry" />
         </mxCell>
         <mxCell id="0_Hv43hvPQ8Ro73fSGsz-1" value="FilterBatchMessageDispatcher&lt;br&gt;(single instance per pipeline)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">

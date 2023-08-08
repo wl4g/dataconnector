@@ -11,10 +11,10 @@
         <option name="gradleJvm" value="1.8" />
         <option name="modules">
           <set>
-            <option value="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber" />
-            <option value="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/core" />
-            <option value="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/server" />
-            <option value="/mnt/disk1/__wanglsir_Documents/java-workspace/wl4g-projects/kafka-subscriber/sharding-elasticjob" />
+            <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/core" />
+            <option value="$PROJECT_DIR$/server" />
+            <option value="$PROJECT_DIR$/source-elasticjob" />
           </set>
         </option>
       </GradleProjectSettings>

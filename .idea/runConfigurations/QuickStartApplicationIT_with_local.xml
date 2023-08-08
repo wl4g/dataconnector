@@ -7,11 +7,11 @@
       <env name="IT_KAFKA_SERVERS_01" value="127.0.0.1:19092" />
       <env name="IT_KAFKA_SERVERS_02" value="127.0.0.1:29092" />
     </envs>
-    <option name="MAIN_CLASS_NAME" value="com.wl4g.kafkasubscriber.quickstart.QuickStartApplicationIT" />
-    <module name="kafka-subscriber.core.test" />
+    <option name="MAIN_CLASS_NAME" value="com.wl4g.streamconnect.quickstart.QuickStartApplicationIT" />
+    <module name="stream-connect.core.test" />
     <extension name="coverage">
       <pattern>
-        <option name="PATTERN" value="com.wl4g.kafkasubscriber.quickstart.*" />
+        <option name="PATTERN" value="com.wl4g.streamconnect.quickstart.*" />
         <option name="ENABLED" value="true" />
       </pattern>
     </extension>

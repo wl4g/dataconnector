@@ -17,7 +17,7 @@ spring.arthas.enabled: true ## Default by true
 
 arthas:
   enabled: true ## Default by true
-  agent-id: kafkasubscriberagentid
+  agent-id: streamconnectagentid
   telnet-port: 3658
   http-port: 8563
   tunnel-server: ws://localhost:7777/ws

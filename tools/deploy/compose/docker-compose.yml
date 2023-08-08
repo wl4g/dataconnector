@@ -124,10 +124,10 @@ services:
     ports:
       - 38080:8080
 
-#  kafka-subscriber:
-#    image: docker.io/wl4g/kafka-subscriber:1.0.0
-#    container_name: kafka-subscriber
-#    hostname: kafka-subscriber
+#  stream-connect:
+#    image: docker.io/wl4g/stream-connect:1.0.0
+#    container_name: stream-connect
+#    hostname: stream-connect
 #    restart: unless-stopped
 #    networks:
 #      - subscriber_net

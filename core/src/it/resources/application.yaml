@@ -12,7 +12,7 @@
 #
 
 spring:
-  application.name: kafka-subscriber
+  application.name: stream-connect
   main:
     allow-circular-references: true
 
@@ -43,7 +43,7 @@ management:
       exposure:
         include: '*'
 
-kafka-subscriber:
+stream-connect:
   definitions:
     bases:
       consumerProps: &baseConsumerProps
@@ -56,26 +56,53 @@ kafka-subscriber:
         sequenceExecutorsPerQueueSize: 100
         executorWarmUp: true
 
+    checkpoints:
+      - !KAFKA
+        name: checkpoint_1
+        executorProps:
+          <<: *baseExecutorProps
+        topicPrefix: "test_streamconnect_topic_ckp_"
+        topicPartitions: 10
+        replicationFactor: 1
+        # TODO support directly parse to Enum
+        qosType: 3 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
+        qoSMaxRetries: 5
+        qoSMaxRetriesTimeout: 1800000 # 30min
+        producerMaxCountLimit: 100
+        producerProps:
+          #bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092} # By default: {.source.consumerProps.'bootstrap.servers'}
+          acks: "0"
+          request.timeout.ms: 30000
+          max.request.size: 1048576
+          send.buffer.bytes: 131072
+          retries: 5
+          retry.backoff.ms: 6000
+          compression.type: gzip
+        defaultTopicProps:
+          cleanup.policy: "delete"
+          retention.ms: 86400000 # By default: 1day
+          retention.bytes: 1073741824 # By default: 1G
+
     sources:
-      - !STATIC
-        name: defaultStaticSourceProvider # Custom source provider bean name
+      - !STATIC_SOURCE
+        name: subscribeSource_1
         staticConfigs:
           - name: kafka01
-            topicPattern: "test_shared_input"
+            topicPattern: "test_streamconnect_input_shared"
             parallelism: 2
             consumerProps:
               bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092}
-              group.id: "test_shared_source_01"
+              group.id: "test_streamconnect_source_01"
               <<: *baseConsumerProps
           - name: kafka02
-            topicPattern: "test_t1003_input"
+            topicPattern: "test_streamconnect_input_t1003"
             parallelism: 2
             consumerProps:
               bootstrap.servers: ${IT_KAFKA_SERVERS_02:localhost:9092}
-              group.id: "test_isolation_source_02"
+              group.id: "test_streamconnect_source_02"
               <<: *baseConsumerProps
       #- !JDBC
-      #  name: jdbcSourceProvider # The example custom JDBC source provider.
+      #  name: subscribeSource_2
       #  jdbcConfig:
       #    jdbcUrl: jdbc:postgresql://localhost:5432/subscriber
       #    username: subscriber
@@ -83,40 +110,20 @@ kafka-subscriber:
       #    sql: 'select * from t_subscriber'
 
     filters:
-      - !EXPRESSION_MATCH
-        name: defaultSubscribeFilter # Custom subscribe filter bean name
-        updateMergeConditionsDelayTime: 2000
+      - !STANDARD_FILTER
+        name: subscribeFilter_1
         filterConfig:
-          topicPrefix: "test_topic_ckp_"
-          topicPartitions: 10
-          replicationFactor: 1
-          executorProps:
-            <<: *baseExecutorProps
-          checkpoint:
-            # TODO support directly parse to Enum
-            qosType: 3 # 0:AT_MOST_ONCE|1:RETRIES_AT_MOST|2:RETRIES_AT_MOST_STRICTLY|3:STRICTLY
-            qoSMaxRetries: 5
-            qoSMaxRetriesTimeout: 1800000 # 30min
-            producerMaxCountLimit: 100
-            producerProps:
-              #bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092} # By default: {.source.consumerProps.'bootstrap.servers'}
-              acks: "0"
-              request.timeout.ms: 30000
-              max.request.size: 1048576
-              send.buffer.bytes: 131072
-              retries: 5
-              retry.backoff.ms: 6000
-              compression.type: gzip
-            defaultTopicProps:
-              cleanup.policy: "delete"
-              retention.ms: 86400000 # By default: 1day
-              retention.bytes: 1073741824 # By default: 1G
+          updateMergeConditionsDelayTime: 2000
+
+    mappers:
+      - !STANDARD_MAPPER
+        name: subscribeMapper_1
 
     sinks:
-      - !PRINT
-        name: defaultSubscribeSink # Custom subscribe sink bean name
+      - !NOOP_SINK
+        name: sink_1
         sinkConfig:
-          groupIdPrefix: "test_group_sink_"
+          groupIdPrefix: "test_streamconnect_group_sink_"
           parallelism: 2
           executorProps:
             <<: *baseExecutorProps
@@ -126,7 +133,7 @@ kafka-subscriber:
 
     ## Notice: The following configuration method is usually used in experimental scenarios to
     ## define the subscriber list. When integrating into actual business applications, the interface
-    ## 'com.wl4g.kafkasubscriber.facade.SubscribeFacade' should be customized to get subscribers info from the DB.
+    ## 'com.wl4g.streamconnect.facade.StreamConnectEngineFacade' should be customized to get subscribers info from the DB.
     subscribers:
       - id: s1001
         name: "subscriber_1"
@@ -162,7 +169,7 @@ kafka-subscriber:
           policies:
             - tenantId: t1001
               recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
-              fieldFilter: '{"fieldNames":["__properties__.__online__.connected"]}'
+              fieldFilter: 'del(.__properties__.__online__.connected)'
             - tenantId: t1003
               recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 1690345000000 && __properties__.__online__.connected == true"}}'
               fieldFilter:
@@ -189,17 +196,27 @@ kafka-subscriber:
     shardingStrategy: AVG_SHARDING
     bootstrapServers: ${IT_KAFKA_SERVERS_01:localhost:9092}
     configConfig:
-      topic: "subscribe_coordinator_config_topic"
+      topic: "test_streamconnect_coordinator_config_topic"
       producerProps: {}
       consumerProps: {}
     discoveryConfig:
-      groupId: "subscribe_coordinator_discovery_group"
+      groupId: "test_streamconnect_coordinator_discovery_group"
       consumerProps: {}
       adminProps: {}
 
   pipelines:
-    - name: defaultPipeline
+    - name: pipeline_1
       enable: true # By default: true
-      source: defaultStaticSourceProvider
-      filter: defaultSubscribeFilter
-      sink: defaultSubscribeSink
+      checkpoint: checkpoint_1
+      source: subscribeSource_1
+      # TODO support custom multiple stages processing
+      #processes:
+      #  - subscribeFilter_1
+      #  - subscribeMapper_1
+      ##  - subscribeFilter_2
+      ##  - subscribeMapper_2
+      filters:
+        - subscribeFilter_1
+      mappers:
+        - subscribeMapper_1
+      sink: sink_1

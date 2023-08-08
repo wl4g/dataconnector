@@ -12,9 +12,9 @@
 #
 
 spring:
-  application.name: kafka-subscriber
+  application.name: stream-connect
   profiles:
-    include: telemetry,arthas,redis,subscriber
+    include: telemetry,arthas,redis,streamconnect
     active: dev
   banner:
     location: classpath:META-INF/banner.txt
