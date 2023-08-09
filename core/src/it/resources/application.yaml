@@ -49,7 +49,7 @@ stream-connect:
       consumerProps: &baseConsumerProps
         request.timeout.ms: 30000
         auto.offset.reset: earliest
-      executorProps: &baseExecutorProps
+      processProps: &baseProcessProps
         sharedExecutorThreadPoolSize: 50
         sharedExecutorQueueSize: 500
         sequenceExecutorsMaxCountLimit: 10
@@ -59,8 +59,8 @@ stream-connect:
     checkpoints:
       - !KAFKA_CHECKPOINT
         name: checkpoint_1
-        executorProps:
-          <<: *baseExecutorProps
+        processProps:
+          <<: *baseProcessProps
         topicPrefix: "test_streamconnect_topic_ckp_"
         topicPartitions: 10
         replicationFactor: 1
@@ -121,14 +121,15 @@ stream-connect:
     sinks:
       - !NOOP_SINK
         name: sink_1
-        sinkConfig:
-          groupIdPrefix: "test_streamconnect_group_sink_"
-          parallelism: 2
-          executorProps:
-            <<: *baseExecutorProps
-          consumerProps:
-            bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092}
-            <<: *baseConsumerProps
+        # TODO remove
+#        sinkConfig:
+#          groupIdPrefix: "test_streamconnect_group_sink_"
+#          parallelism: 2
+#          processProps:
+#            <<: *baseProcessProps
+#          consumerProps:
+#            bootstrap.servers: ${IT_KAFKA_SERVERS_01:localhost:9092}
+#            <<: *baseConsumerProps
 
     ## Notice: The following configuration method is usually used in experimental scenarios to
     ## define the subscriber list. When integrating into actual business applications, the interface
