@@ -26,7 +26,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import java.util.Collection;
 
 /**
- * {@link IProcessFilter}
+ * The custom record processing(filtering).
  *
  * @author James Wong
  * @since v1.0

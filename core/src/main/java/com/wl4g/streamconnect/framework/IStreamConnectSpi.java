@@ -17,6 +17,12 @@
 
 package com.wl4g.streamconnect.framework;
 
+/**
+ * The {@link IStreamConnectSpi}
+ *
+ * @author James Wong
+ * @since v1.0
+ **/
 public interface IStreamConnectSpi {
 
     String getType();

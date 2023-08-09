@@ -23,7 +23,7 @@ import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * The custom record column filtering.
+ * The custom record column processing(transform,filtering).
  *
  * @author James Wong
  * @since v1.0
