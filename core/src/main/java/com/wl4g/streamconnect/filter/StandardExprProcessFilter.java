@@ -44,9 +44,9 @@ import static com.wl4g.infra.common.serialize.JacksonUtils.parseJSON;
  * @since v1.0
  **/
 @Slf4j
-public class StandardProcessFilter extends AbstractProcessFilter {
+public class StandardExprProcessFilter extends AbstractProcessFilter {
 
-    public static final String TYPE_NAME = "STANDARD_FILTER";
+    public static final String TYPE_NAME = "STANDARD_EXPR_FILTER";
 
     private ExpressionOperator operator;
 

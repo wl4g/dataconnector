@@ -25,7 +25,7 @@ import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoo
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.AverageShardingStrategy;
 import com.wl4g.streamconnect.filter.IProcessFilter;
-import com.wl4g.streamconnect.filter.StandardProcessFilter;
+import com.wl4g.streamconnect.filter.StandardExprProcessFilter;
 import com.wl4g.streamconnect.map.IProcessMapper;
 import com.wl4g.streamconnect.sink.IProcessSink;
 import com.wl4g.streamconnect.sink.NoOpProcessSink;
@@ -160,7 +160,7 @@ public class StreamConnectProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static class SubscribeProcessProperties {
-        private @Builder.Default String name = StandardProcessFilter.TYPE_NAME;
+        private @Builder.Default String name = StandardExprProcessFilter.TYPE_NAME;
         private @Builder.Default SubscribeExecutorProperties executorConfig = new SubscribeExecutorProperties();
 
         public void validate() {

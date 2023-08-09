@@ -43,7 +43,7 @@ public class ProcessFilterChainTests {
     public void testFilterChainEnd() {
         final List<Integer> tracing = new ArrayList<>();
 
-        StandardProcessFilter filter1 = new StandardProcessFilter() {
+        StandardExprProcessFilter filter1 = new StandardExprProcessFilter() {
             @Override
             public boolean doFilter(SubscriberInfo subscriberInfo, ConsumerRecord<String, ObjectNode> record) {
                 tracing.add(1);
@@ -61,7 +61,7 @@ public class ProcessFilterChainTests {
                         .build())
                 .build()));
 
-        StandardProcessFilter filter2 = new StandardProcessFilter() {
+        StandardExprProcessFilter filter2 = new StandardExprProcessFilter() {
             @Override
             public boolean doFilter(SubscriberInfo subscriberInfo, ConsumerRecord<String, ObjectNode> record) {
                 tracing.add(2);
@@ -79,7 +79,7 @@ public class ProcessFilterChainTests {
                         .build())
                 .build()));
 
-        StandardProcessFilter filter3 = new StandardProcessFilter() {
+        StandardExprProcessFilter filter3 = new StandardExprProcessFilter() {
             @Override
             public boolean doFilter(SubscriberInfo subscriberInfo, ConsumerRecord<String, ObjectNode> record) {
                 // never called

@@ -110,7 +110,7 @@ stream-connect:
       #    sql: 'select * from t_subscriber'
 
     filters:
-      - !STANDARD_FILTER
+      - !STANDARD_EXPR_FILTER
         name: subscribeFilter_1
         filterProps:
           updateMergeConditionsDelayTime: 2000

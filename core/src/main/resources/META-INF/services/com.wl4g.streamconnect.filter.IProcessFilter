@@ -13,4 +13,5 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-com.wl4g.streamconnect.filter.StandardProcessFilter
+com.wl4g.streamconnect.filter.StandardExprProcessFilter
+com.wl4g.streamconnect.filter.RedisRecordProcessFilter
