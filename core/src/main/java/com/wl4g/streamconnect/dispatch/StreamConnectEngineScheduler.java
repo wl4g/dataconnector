@@ -25,8 +25,8 @@ import com.wl4g.streamconnect.config.KafkaProducerBuilder;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration.PipelineConfig;
 import com.wl4g.streamconnect.config.StreamConnectProperties.BaseConsumerProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSinkProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SinkProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.coordinator.CachingSubscriberRegistry;
 import com.wl4g.streamconnect.custom.StreamConnectEngineCustomizer;
 import com.wl4g.streamconnect.sink.IProcessSink;
@@ -186,10 +186,10 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
             final Map<String, SubscribeContainerBootstrap<ProcessBatchMessageDispatcher>> filterBootstraps =
                     CollectionUtils2.safeList(pipelineConfig.getSourceProvider().loadSources(pipelineName))
                             .stream()
-                            .map(SubscribeSourceProperties::optimizeProperties)
+                            .map(SourceProperties::optimizeProperties)
                             .collect(Collectors.toMap(
                                     BaseConsumerProperties::getName,
-                                    source -> registerPipelineFilter(pipelineConfig, (SubscribeSourceProperties) source)));
+                                    source -> registerPipelineFilter(pipelineConfig, (SourceProperties) source)));
 
             Map<String, SubscribeContainerBootstrap<SinkBatchMessageDispatcher>> sinkBootstraps = emptyMap();
             // Register sink config If necessary. (per subscriber a sink dispatcher instance)
@@ -212,7 +212,7 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
 
     public SubscribeContainerBootstrap<ProcessBatchMessageDispatcher> registerPipelineFilter(
             PipelineConfig pipelineConfig,
-            SubscribeSourceProperties subscribeSourceConfig) {
+            SourceProperties subscribeSourceConfig) {
         Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         Assert2.notNullOf(subscribeSourceConfig, "sourceConfig");
         pipelineConfig.validate();
@@ -251,7 +251,7 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
         pipelineConfig.validate();
         subscriber.validate();
 
-        final SubscribeSinkProperties sinkProps = (SubscribeSinkProperties) pipelineConfig.getSink()
+        final SinkProperties sinkProps = (SinkProperties) pipelineConfig.getSink()
                 .getSinkConfig().optimizeProperties();
 
         final String sinkFromTopic = customizer.generateCheckpointTopic(pipelineConfig.getName(),

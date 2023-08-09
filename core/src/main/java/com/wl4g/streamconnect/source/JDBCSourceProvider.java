@@ -17,7 +17,7 @@
 
 package com.wl4g.streamconnect.source;
 
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -43,7 +43,7 @@ public class JDBCSourceProvider extends AbstractSourceProvider {
     }
 
     @Override
-    public List<SubscribeSourceProperties> loadSources(String pipelineName) {
+    public List<SourceProperties> loadSources(String pipelineName) {
         throw new UnsupportedOperationException();
     }
 

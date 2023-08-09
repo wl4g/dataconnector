@@ -17,7 +17,7 @@
 
 package com.wl4g.streamconnect.source;
 
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -38,7 +38,7 @@ public class StaticSourceProvider extends AbstractSourceProvider {
 
     public static final String TYPE_NAME = "STATIC_SOURCE";
 
-    private List<SubscribeSourceProperties> staticConfigs = new ArrayList<>(2);
+    private List<SourceProperties> staticConfigs = new ArrayList<>(2);
 
     @Override
     public String getType() {
@@ -46,7 +46,7 @@ public class StaticSourceProvider extends AbstractSourceProvider {
     }
 
     @Override
-    public List<SubscribeSourceProperties> loadSources(String pipelineName) {
+    public List<SourceProperties> loadSources(String pipelineName) {
         return staticConfigs;
     }
 

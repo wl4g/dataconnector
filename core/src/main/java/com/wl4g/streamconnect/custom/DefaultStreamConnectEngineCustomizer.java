@@ -20,7 +20,7 @@ package com.wl4g.streamconnect.custom;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.bean.TenantInfo;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.coordinator.IStreamConnectCoordinator;
 import com.wl4g.streamconnect.exception.StreamConnectException;
 import com.wl4g.streamconnect.source.ISourceProvider;
@@ -64,7 +64,7 @@ public class DefaultStreamConnectEngineCustomizer implements StreamConnectEngine
     }
 
     @Override
-    public SubscribeSourceProperties loadSourceByTenant(String pipelineName, String tenantId) {
+    public SourceProperties loadSourceByTenant(String pipelineName, String tenantId) {
         // Getting tenant by ID.
         final TenantInfo tenant = safeList(config.getProperties().getDefinitions().getTenants())
                 .stream()

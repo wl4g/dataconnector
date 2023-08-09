@@ -22,7 +22,7 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.bean.SubscriberInfo.SubscribeGrantedPolicy;
 import com.wl4g.streamconnect.config.StreamConnectProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.dispatch.ProcessBatchMessageDispatcher;
 import com.wl4g.streamconnect.util.KafkaUtil;
 import com.wl4g.streamconnect.coordinator.IStreamConnectCoordinator;
@@ -49,8 +49,8 @@ public interface StreamConnectEngineCustomizer {
     List<SubscriberInfo> loadSubscribers(@NotBlank String pipelineName,
                                          @Null IStreamConnectCoordinator.ShardingInfo sharding);
 
-    SubscribeSourceProperties loadSourceByTenant(@NotBlank String pipelineName,
-                                                 @NotBlank String tenantId);
+    SourceProperties loadSourceByTenant(@NotBlank String pipelineName,
+                                        @NotBlank String tenantId);
 
     default boolean matchSubscriberRecord(@NotBlank String pipelineName,
                                           @NotNull SubscriberInfo subscriber,
@@ -97,7 +97,7 @@ public interface StreamConnectEngineCustomizer {
     }
 
     default String generateSinkGroupId(@NotBlank String pipelineName,
-                                       @Null StreamConnectProperties.SubscribeSinkProperties subscribeSinkConfig,
+                                       @Null StreamConnectProperties.SinkProperties subscribeSinkConfig,
                                        @Null String subscriberId) {
         Assert2.hasTextOf(pipelineName, "pipelineName");
 

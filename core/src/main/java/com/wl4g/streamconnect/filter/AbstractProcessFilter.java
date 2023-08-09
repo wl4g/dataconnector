@@ -19,7 +19,6 @@ package com.wl4g.streamconnect.filter;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeProcessProperties;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -39,21 +38,20 @@ import java.util.Collection;
 public abstract class AbstractProcessFilter implements IProcessFilter {
 
     private String name;
-    private SubscribeProcessProperties filterProps = new SubscribeProcessProperties();
-    private Long updateMergeConditionsDelayTime = 2_000L;
+    private long mergeConditionsDelay = 2_000L;
 
+    @Getter(AccessLevel.NONE)
     @Setter(AccessLevel.NONE)
     private transient long _lastUpdateTime = 0L;
 
     @Override
     public void validate() {
         Assert2.hasTextOf(name, "name");
-        filterProps.validate();
     }
 
     @Override
     public void updateMergeSubscribeConditions(Collection<SubscriberInfo> subscribers) {
-        if (Math.abs(System.nanoTime()) - _lastUpdateTime > getUpdateMergeConditionsDelayTime()) {
+        if (Math.abs(System.nanoTime()) - _lastUpdateTime > getMergeConditionsDelay()) {
             log.trace(":: {} :: Updating to merge subscribe conditions ...", getName());
             _lastUpdateTime = System.nanoTime();
             doUpdateMergeConditions(subscribers);

@@ -19,7 +19,6 @@ package com.wl4g.streamconnect.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeProcessProperties;
 import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -32,8 +31,6 @@ import java.util.Collection;
  * @since v1.0
  **/
 public interface IProcessFilter extends IStreamConnectSpi {
-
-    SubscribeProcessProperties getFilterProps();
 
     void updateMergeSubscribeConditions(Collection<SubscriberInfo> subscribers);
 

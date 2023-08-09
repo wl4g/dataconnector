@@ -19,9 +19,8 @@ package com.wl4g.streamconnect.config;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.streamconnect.checkpoint.IProcessCheckpoint;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeCoordinatorProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeDefinitionProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribePipelineProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.CoordinatorProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.DefinitionProperties;
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorBusConfig;
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.IShardingStrategy;
@@ -97,7 +96,7 @@ public class StreamConnectConfiguration {
     private DefinitionsConfig parseDefinitionsConfig(@NotNull StreamConnectProperties properties) {
         Assert2.notNullOf(properties, "properties");
 
-        final SubscribeDefinitionProperties definitionProps = properties.getDefinitions();
+        final DefinitionProperties definitionProps = properties.getDefinitions();
         final DefinitionsConfig definitions = new DefinitionsConfig();
 
         // Parse to checkpoint.
@@ -134,7 +133,7 @@ public class StreamConnectConfiguration {
     }
 
     private PipelineConfig parsePipelineConfig(@NotNull StreamConnectProperties properties,
-                                               @NotNull SubscribePipelineProperties pipelineProps) {
+                                               @NotNull StreamConnectProperties.PipelineProperties pipelineProps) {
         Assert2.notNullOf(properties, "properties");
         Assert2.notNullOf(pipelineProps, "pipelineProps");
 
@@ -198,7 +197,7 @@ public class StreamConnectConfiguration {
         Assert2.notNullOf(properties, "properties");
 
         final CoordinatorConfig coordinator = new CoordinatorConfig();
-        final SubscribeCoordinatorProperties coordinatorProps = properties.getCoordinator();
+        final CoordinatorProperties coordinatorProps = properties.getCoordinator();
 
         // Parse to coordinator sharding strategy.
         coordinator.setShardingStrategy(ShardingStrategyFactory.getStrategy(coordinatorProps

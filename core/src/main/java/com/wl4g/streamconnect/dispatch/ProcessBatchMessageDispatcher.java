@@ -23,8 +23,8 @@ import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.config.KafkaProducerBuilder;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration.PipelineConfig;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeExecutorProperties;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.ProcessProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.coordinator.CachingSubscriberRegistry;
 import com.wl4g.streamconnect.custom.StreamConnectEngineCustomizer;
 import com.wl4g.streamconnect.exception.GiveUpRetryExecutionException;
@@ -96,7 +96,7 @@ import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_
 @Getter
 @Slf4j
 public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatcher {
-    private final SubscribeSourceProperties subscribeSourceProps;
+    private final SourceProperties subscribeSourceProps;
     private final ThreadPoolExecutor sharedNonSequenceExecutor;
     private final List<ThreadPoolExecutor> isolationSequenceExecutors;
     private final Map<String, List<Producer<String, String>>> checkpointProducersMap;
@@ -104,7 +104,7 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
 
     public ProcessBatchMessageDispatcher(StreamConnectConfiguration config,
                                          PipelineConfig pipelineConfig,
-                                         SubscribeSourceProperties subscribeSourceProps,
+                                         SourceProperties subscribeSourceProps,
                                          StreamConnectEngineCustomizer customizer,
                                          CachingSubscriberRegistry registry,
                                          ApplicationEventPublisher eventPublisher,
@@ -112,12 +112,12 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
                                          String groupId,
                                          Producer<String, String> acknowledgeProducer) {
         super(config, pipelineConfig, customizer, registry, eventPublisher, topicDesc, groupId);
-        this.subscribeSourceProps = Assert2.notNullOf(subscribeSourceProps, "sourceConfig");
+        this.subscribeSourceProps = Assert2.notNullOf(subscribeSourceProps, "subscribeSourceProps");
         this.acknowledgeProducer = Assert2.notNullOf(acknowledgeProducer, "acknowledgeProducer");
         this.checkpointProducersMap = new ConcurrentHashMap<>(8); // TODO 8?
 
         // Create the shared filterProvider single executor.
-        final SubscribeExecutorProperties processConfig = pipelineConfig.getCheckpoint().getExecutorProps();
+        final ProcessProperties processConfig = pipelineConfig.getCheckpoint().getProcessProps();
         this.sharedNonSequenceExecutor = new ThreadPoolExecutor(processConfig.getSharedExecutorThreadPoolSize(),
                 processConfig.getSharedExecutorThreadPoolSize(),
                 0L, TimeUnit.MILLISECONDS,
@@ -525,7 +525,7 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
             log.info("{} :: Creating filtered checkpoint producers...", groupId);
 
             // Find the source config by subscriber tenantId.
-            final SubscribeSourceProperties tenantSourceConfig = customizer.loadSourceByTenant(
+            final SourceProperties tenantSourceConfig = customizer.loadSourceByTenant(
                     pipelineConfig.getName(), tenantId);
             if (Objects.isNull(tenantSourceConfig)) {
                 throw new StreamConnectException(String.format("%s :: Could not found source config by tenantId: %s",

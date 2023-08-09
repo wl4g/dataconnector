@@ -21,7 +21,7 @@ import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration.PipelineConfig;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.coordinator.StreamConnectEventPublisher;
 import com.wl4g.streamconnect.dispatch.ProcessBatchMessageDispatcher;
 import com.wl4g.streamconnect.dispatch.SinkBatchMessageDispatcher;
@@ -67,7 +67,7 @@ public class StreamConnectEngineFacade {
 
     public SubscribeContainerBootstrap<ProcessBatchMessageDispatcher> registerPipelineFilter(
             String pipelineName,
-            SubscribeSourceProperties subscribeSourceProps) {
+            SourceProperties subscribeSourceProps) {
         return engineManager.registerPipelineFilter(getRequiredPipelineProperties(pipelineName), subscribeSourceProps);
     }
 

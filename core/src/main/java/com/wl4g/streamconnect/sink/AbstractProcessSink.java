@@ -18,7 +18,7 @@
 package com.wl4g.streamconnect.sink;
 
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSinkProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.SinkProperties;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -33,7 +33,7 @@ import lombok.Setter;
 public abstract class AbstractProcessSink implements IProcessSink {
 
     private String name;
-    private SubscribeSinkProperties sinkConfig = new SubscribeSinkProperties();
+    private SinkProperties sinkConfig = new SinkProperties();
 
     @Override
     public void validate() {

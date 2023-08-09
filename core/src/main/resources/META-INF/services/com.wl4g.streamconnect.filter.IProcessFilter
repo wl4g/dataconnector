@@ -14,4 +14,3 @@
 #  limitations under the License.
 #
 com.wl4g.streamconnect.filter.StandardExprProcessFilter
-com.wl4g.streamconnect.filter.RedisRecordProcessFilter

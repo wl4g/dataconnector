@@ -25,7 +25,6 @@ import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoo
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.AverageShardingStrategy;
 import com.wl4g.streamconnect.filter.IProcessFilter;
-import com.wl4g.streamconnect.filter.StandardExprProcessFilter;
 import com.wl4g.streamconnect.map.IProcessMapper;
 import com.wl4g.streamconnect.sink.IProcessSink;
 import com.wl4g.streamconnect.sink.NoOpProcessSink;
@@ -69,9 +68,9 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZE
 @Setter
 @ToString
 public class StreamConnectProperties implements InitializingBean {
-    private @Builder.Default SubscribeDefinitionProperties definitions = new SubscribeDefinitionProperties();
-    private @Builder.Default SubscribeCoordinatorProperties coordinator = new SubscribeCoordinatorProperties();
-    private @Builder.Default List<SubscribePipelineProperties> pipelines = new ArrayList<>(1);
+    private @Builder.Default DefinitionProperties definitions = new DefinitionProperties();
+    private @Builder.Default CoordinatorProperties coordinator = new CoordinatorProperties();
+    private @Builder.Default List<PipelineProperties> pipelines = new ArrayList<>(1);
 
     @Override
     public void afterPropertiesSet() {
@@ -89,7 +88,7 @@ public class StreamConnectProperties implements InitializingBean {
         Assert2.notNullOf(pipelines, "pipelines");
         definitions.validate();
         coordinator.validate();
-        pipelines.forEach(SubscribePipelineProperties::validate);
+        pipelines.forEach(PipelineProperties::validate);
     }
 
     // ----- Definitions configuration. -----
@@ -99,7 +98,7 @@ public class StreamConnectProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SubscribeDefinitionProperties {
+    public static class DefinitionProperties {
         private @Builder.Default List<IProcessCheckpoint> checkpoints = new ArrayList<>(2);
         private @Builder.Default List<ISourceProvider> sources = new ArrayList<>(2);
         private @Builder.Default List<IProcessFilter> filters = new ArrayList<>(2);
@@ -143,7 +142,7 @@ public class StreamConnectProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SubscribeSourceProperties extends BaseConsumerProperties {
+    public static class SourceProperties extends BaseConsumerProperties {
         private String topicPattern;
 
         @Override
@@ -158,33 +157,16 @@ public class StreamConnectProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
-    @NoArgsConstructor
-    public static class SubscribeProcessProperties {
-        private @Builder.Default String name = StandardExprProcessFilter.TYPE_NAME;
-        private @Builder.Default SubscribeExecutorProperties executorConfig = new SubscribeExecutorProperties();
-
-        public void validate() {
-            this.executorConfig.validate();
-            Assert2.hasTextOf(name, "customFilterBeanName");
-        }
-    }
-
-    @Getter
-    @Setter
-    @SuperBuilder
-    @ToString
-    public static class SubscribeSinkProperties extends BaseConsumerProperties {
+    public static class SinkProperties extends BaseConsumerProperties {
         private @Builder.Default String groupIdPrefix = "subscribe_group_sink_";
-        private @Builder.Default SubscribeExecutorProperties executorConfig = new SubscribeExecutorProperties();
 
-        public SubscribeSinkProperties() {
+        public SinkProperties() {
             setName(NoOpProcessSink.TYPE_NAME);
         }
 
         public void validate() {
             super.validate();
             Assert2.hasTextOf(groupIdPrefix, "groupIdPrefix");
-            getExecutorConfig().validate();
         }
     }
 
@@ -279,7 +261,7 @@ public class StreamConnectProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SubscribeExecutorProperties {
+    public static class ProcessProperties {
         private @Builder.Default int sharedExecutorThreadPoolSize = 50;
         private @Builder.Default int sharedExecutorQueueSize = 500;
         private @Builder.Default int sequenceExecutorsMaxCountLimit = 100;
@@ -366,7 +348,7 @@ public class StreamConnectProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SubscribePipelineProperties {
+    public static class PipelineProperties {
         private String name;
         private @Builder.Default boolean enable = true;
         private @NotBlank String checkpoint;
@@ -392,7 +374,7 @@ public class StreamConnectProperties implements InitializingBean {
     @SuperBuilder
     @ToString
     @NoArgsConstructor
-    public static class SubscribeCoordinatorProperties {
+    public static class CoordinatorProperties {
         private @Builder.Default String shardingStrategy = AverageShardingStrategy.TYPE;
         private @Builder.Default String bootstrapServers = "localhost:9092";
         private @Builder.Default KafkaCoordinatorBusConfig configConfig = new KafkaCoordinatorBusConfig();

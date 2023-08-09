@@ -57,7 +57,7 @@ stream-connect:
         executorWarmUp: true
 
     checkpoints:
-      - !KAFKA
+      - !KAFKA_CHECKPOINT
         name: checkpoint_1
         executorProps:
           <<: *baseExecutorProps
@@ -112,10 +112,7 @@ stream-connect:
     filters:
       - !STANDARD_EXPR_FILTER
         name: subscribeFilter_1
-        filterProps:
-          updateMergeConditionsDelayTime: 2000
-      - !REDIS_RECORD_FILTER
-        name: subscribeFilter_2
+        mergeConditionsDelay: 2000
 
     mappers:
       - !NOOP_MAPPER

@@ -19,7 +19,7 @@ package com.wl4g.streamconnect.checkpoint;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.streamconnect.config.StreamConnectProperties.CheckpointQoS;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeExecutorProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.ProcessProperties;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
@@ -41,7 +41,7 @@ import java.util.Properties;
 @Setter
 public class KafkaProcessCheckpoint extends AbstractProcessCheckpoint {
 
-    public static final String TYPE_NAME = "KAFKA";
+    public static final String TYPE_NAME = "KAFKA_CHECKPOINT";
 
     private String topicPrefix = "subscribe_topic_ckp_";
     private int topicPartitions = 10;
@@ -85,7 +85,7 @@ public class KafkaProcessCheckpoint extends AbstractProcessCheckpoint {
         }
     };
 
-    private SubscribeExecutorProperties executorProps = new SubscribeExecutorProperties();
+    private ProcessProperties processProps = new ProcessProperties();
 
     @Override
     public String getType() {
@@ -122,6 +122,8 @@ public class KafkaProcessCheckpoint extends AbstractProcessCheckpoint {
         Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_MS_CONFIG), "retention.ms");
         Assert2.notNullOf(defaultTopicProps.get(TopicConfig.RETENTION_BYTES_CONFIG), "retention.bytes");
         //Assert2.notNullOf(defaultTopicProps.get(TopicConfig.DELETE_RETENTION_MS_CONFIG), "delete.retention.ms");
+
+        processProps.validate();
     }
 
     @Override

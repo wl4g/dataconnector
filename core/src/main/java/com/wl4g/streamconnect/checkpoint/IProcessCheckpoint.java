@@ -18,7 +18,7 @@
 package com.wl4g.streamconnect.checkpoint;
 
 import com.wl4g.streamconnect.config.StreamConnectProperties.CheckpointQoS;
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeExecutorProperties;
+import com.wl4g.streamconnect.config.StreamConnectProperties.ProcessProperties;
 import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 
 import java.util.Properties;
@@ -50,6 +50,6 @@ public interface IProcessCheckpoint extends IStreamConnectSpi {
 
     Properties getDefaultTopicProps();
 
-    SubscribeExecutorProperties getExecutorProps();
+    ProcessProperties getProcessProps();
 
 }
