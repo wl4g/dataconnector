@@ -24,12 +24,12 @@ import java.io.Serializable;
 import java.util.concurrent.Future;
 
 /**
- * The {@link SendExternalMQProcessSink}
+ * The {@link SendMQProcessSink}
  *
  * @author James Wong
  * @since v1.0
  **/
-public class SendExternalMQProcessSink extends AbstractProcessSink {
+public class SendMQProcessSink extends AbstractProcessSink {
 
     public static final String TYPE_NAME = "SEND_MQ_SINK";
 

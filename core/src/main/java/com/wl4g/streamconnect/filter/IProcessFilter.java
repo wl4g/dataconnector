@@ -33,7 +33,7 @@ import java.util.Collection;
  **/
 public interface IProcessFilter extends IStreamConnectSpi {
 
-    SubscribeProcessProperties getFilterConfig();
+    SubscribeProcessProperties getFilterProps();
 
     void updateMergeSubscribeConditions(Collection<SubscriberInfo> subscribers);
 

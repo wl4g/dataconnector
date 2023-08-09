@@ -123,7 +123,7 @@ public abstract class ExpressionOperator implements Function<JsonNode, Boolean> 
 
     @Getter
     @AllArgsConstructor
-    public static enum LogicalType {
+    public enum LogicalType {
         AND((subFilters, record) -> safeList(subFilters).stream().allMatch(sub -> sub.apply(record))),
 
         OR((subFilters, record) -> safeList(subFilters).stream().anyMatch(sub -> sub.apply(record))),

@@ -39,7 +39,7 @@ import java.util.Collection;
 public abstract class AbstractProcessFilter implements IProcessFilter {
 
     private String name;
-    private SubscribeProcessProperties filterConfig = new SubscribeProcessProperties();
+    private SubscribeProcessProperties filterProps = new SubscribeProcessProperties();
     private Long updateMergeConditionsDelayTime = 2_000L;
 
     @Setter(AccessLevel.NONE)
@@ -48,7 +48,7 @@ public abstract class AbstractProcessFilter implements IProcessFilter {
     @Override
     public void validate() {
         Assert2.hasTextOf(name, "name");
-        filterConfig.validate();
+        filterProps.validate();
     }
 
     @Override

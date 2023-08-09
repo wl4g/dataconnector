@@ -142,6 +142,7 @@ public class StreamConnectProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
+    @NoArgsConstructor
     public static class SubscribeSourceProperties extends BaseConsumerProperties {
         private String topicPattern;
 

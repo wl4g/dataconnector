@@ -19,6 +19,7 @@ package com.wl4g.streamconnect.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSinkProperties;
+import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.Serializable;
@@ -31,15 +32,9 @@ import java.util.concurrent.TimeUnit;
  * @author James Wong
  * @since v1.0
  **/
-public interface IProcessSink {
-
-    String getName();
-
-    String getType();
+public interface IProcessSink extends IStreamConnectSpi {
 
     SubscribeSinkProperties getSinkConfig();
-
-    void validate();
 
     default Future<? extends Serializable> doSink(String subscriberId,
                                                   boolean sequence,

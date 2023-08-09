@@ -14,4 +14,4 @@
 #  limitations under the License.
 #
 com.wl4g.streamconnect.sink.NoOpProcessSink
-com.wl4g.streamconnect.sink.SendExternalMQProcessSink
+com.wl4g.streamconnect.sink.SendMQProcessSink

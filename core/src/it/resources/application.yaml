@@ -112,7 +112,7 @@ stream-connect:
     filters:
       - !STANDARD_FILTER
         name: subscribeFilter_1
-        filterConfig:
+        filterProps:
           updateMergeConditionsDelayTime: 2000
 
     mappers:

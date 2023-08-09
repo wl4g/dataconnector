@@ -54,7 +54,7 @@ public class ProcessFilterChain {
                             ConsumerRecord<String, ObjectNode> record) {
         if (Objects.nonNull(filters)) {
             for (IProcessFilter filter : filters) {
-                if (!filter.doFilter(subscriber, record)) {
+                if (filter.doFilter(subscriber, record)) {
                     return false; // end filtering if there is no match.
                 }
             }

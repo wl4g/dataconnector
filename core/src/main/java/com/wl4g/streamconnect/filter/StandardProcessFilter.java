@@ -19,7 +19,6 @@ package com.wl4g.streamconnect.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.infra.common.lang.Assert2;
-import com.wl4g.infra.common.serialize.JacksonUtils;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.util.expression.ExpressionOperator;
 import com.wl4g.streamconnect.util.expression.ExpressionOperator.LogicalOperator;
@@ -35,6 +34,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.infra.common.serialize.JacksonUtils.parseJSON;
 
 /**
  * The {@link StandardProcessFilter}
@@ -73,7 +73,7 @@ public class StandardProcessFilter extends AbstractProcessFilter {
                                         throw new IllegalArgumentException(String.format("Could not match expression filter " +
                                                 "named '%s' was found from the subscriber '%s' properties", getName(), s.getId()));
                                     }
-                                    return JacksonUtils.parseJSON(sga.getRecordFilter(), ExpressionOperator.class);
+                                    return parseJSON(sga.getRecordFilter(), ExpressionOperator.class);
                                 })
                                 .filter(Objects::nonNull))
                 .collect(Collectors.toList());
