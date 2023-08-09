@@ -37,7 +37,8 @@ import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.serialize.JacksonUtils.parseJSON;
 
 /**
- * The {@link StandardProcessFilter}
+ * The standard filter, support data permission filtering based on aviator
+ * expression record.
  *
  * @author James Wong
  * @since v1.0

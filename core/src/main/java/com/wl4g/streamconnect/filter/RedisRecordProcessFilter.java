@@ -15,21 +15,40 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.filter;
+
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.streamconnect.bean.SubscriberInfo;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+import java.util.Collection;
 
 /**
- * The {@link StandardProcessMapper}
+ * The redis filter, support data permission filtering based on redis
+ * bitmap and record ID.
  *
  * @author James Wong
  * @since v1.0
  **/
-public class StandardProcessMapper extends AbstractProcessMapper {
+public class RedisRecordProcessFilter extends AbstractProcessFilter {
 
-    public static final String TYPE_NAME = "STANDARD_MAPPER";
+    public static final String TYPE_NAME = "REDIS_RECORD_FILTER";
 
     @Override
     public String getType() {
         return TYPE_NAME;
     }
+
+    @Override
+    protected void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers) {
+        // TODO
+    }
+
+    @Override
+    public boolean doFilter(SubscriberInfo subscriber, ConsumerRecord<String, ObjectNode> record) {
+        // TODO
+        return false;
+    }
+
 
 }

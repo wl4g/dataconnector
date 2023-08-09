@@ -40,7 +40,7 @@ public class ProcessMapperChainTests {
     public void testMapperChainEnd() {
         final List<Integer> tracing = new ArrayList<>();
 
-        StandardProcessMapper mapper1 = new StandardProcessMapper() {
+        NoOpProcessMapper mapper1 = new NoOpProcessMapper() {
             @Override
             public ConsumerRecord<String, ObjectNode> doMap(ProcessMapperChain chain,
                                                             SubscriberInfo subscriber,
@@ -51,7 +51,7 @@ public class ProcessMapperChainTests {
         };
         mapper1.setName("mapper1");
 
-        StandardProcessMapper mapper2 = new StandardProcessMapper() {
+        NoOpProcessMapper mapper2 = new NoOpProcessMapper() {
             @Override
             public ConsumerRecord<String, ObjectNode> doMap(ProcessMapperChain chain,
                                                             SubscriberInfo subscriber,
@@ -62,7 +62,7 @@ public class ProcessMapperChainTests {
         };
         mapper2.setName("mapper2");
 
-        StandardProcessMapper mapper3 = new StandardProcessMapper() {
+        NoOpProcessMapper mapper3 = new NoOpProcessMapper() {
             @Override
             public ConsumerRecord<String, ObjectNode> doMap(ProcessMapperChain chain,
                                                             SubscriberInfo subscriber,

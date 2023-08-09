@@ -114,9 +114,11 @@ stream-connect:
         name: subscribeFilter_1
         filterProps:
           updateMergeConditionsDelayTime: 2000
+      - !REDIS_RECORD_FILTER
+        name: subscribeFilter_2
 
     mappers:
-      - !STANDARD_MAPPER
+      - !NOOP_MAPPER
         name: subscribeMapper_1
 
     sinks:
