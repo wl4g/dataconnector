@@ -71,6 +71,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -361,12 +362,8 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
         // Execute custom filters in parallel them to different send executor queues.
         final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
                 .map(sr -> new FilteredResult(sr,
-                        determineFilterExecutor(sr).submit(() -> {
-                            final boolean matched = filterChain.doFilter(sr.getSubscriber(), sr.getRecord());
-                            final ConsumerRecord<String, ObjectNode> mapped = matched ?
-                                    mapperChain.doMap(sr.getSubscriber(), sr.getRecord()) : sr.getRecord();
-                            return new FilteredFutureResult(matched, mapped);
-                        }), System.nanoTime(), 1))
+                        determineFilterExecutor(sr).submit(buildProcessTask(sr, filterChain, mapperChain)),
+                        System.nanoTime(), 1))
                 .collect(toList());
 
         Set<CheckpointSentResult> checkpointSentResults = null;
@@ -471,15 +468,25 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
                                        ProcessMapperChain mapperChain,
                                        FilteredResult fr,
                                        List<FilteredResult> filteredResults) {
-        log.info("{} :: Re-enqueue Requeue and retry filter execution. fr : {}", groupId, fr);
+        log.info("{} :: Re-enqueue Requeue and retry processing. fr : {}", groupId, fr);
         final SubscriberRecord sr = fr.getRecord();
         filteredResults.add(new FilteredResult(fr.getRecord(),
-                determineFilterExecutor(fr.getRecord()).submit(() -> {
-                    final boolean matched = filterChain.doFilter(sr.getSubscriber(), sr.getRecord());
-                    final ConsumerRecord<String, ObjectNode> mappedRecords = matched ?
-                            mapperChain.doMap(sr.getSubscriber(), sr.getRecord()) : sr.getRecord();
-                    return new FilteredFutureResult(matched, mappedRecords);
-                }), fr.getRetryBegin(), fr.getRetryTimes() + 1));
+                determineFilterExecutor(fr.getRecord())
+                        .submit(buildProcessTask(sr, filterChain, mapperChain)),
+                fr.getRetryBegin(), fr.getRetryTimes() + 1));
+    }
+
+    private Callable<FilteredFutureResult> buildProcessTask(SubscriberRecord sr,
+                                                            ProcessFilterChain filterChain,
+                                                            ProcessMapperChain mapperChain) {
+        return () -> {
+            final boolean matched = filterChain.doFilter(sr.getSubscriber(), sr.getRecord());
+            ConsumerRecord<String, ObjectNode> mapped = sr.getRecord();
+            if (matched) {
+                mapped = mapperChain.doMap(sr.getSubscriber(), sr.getRecord());
+            }
+            return new FilteredFutureResult(matched, mapped);
+        };
     }
 
     private ThreadPoolExecutor determineFilterExecutor(SubscriberRecord record) {
