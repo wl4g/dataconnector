@@ -17,25 +17,25 @@
 
 package com.wl4g.streamconnect.source;
 
-import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
-
-import javax.validation.constraints.NotBlank;
-import java.util.List;
+import com.wl4g.infra.common.lang.Assert2;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
- * The {@link ISubscribeSourceProvider}
+ * The {@link AbstractSourceProvider}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface ISubscribeSourceProvider {
+@Getter
+@Setter
+public abstract class AbstractSourceProvider implements ISourceProvider {
 
-    String getName();
+    private String name;
 
-    String getType();
-
-    void validate();
-
-    List<SubscribeSourceProperties> loadSources(@NotBlank String pipelineName);
+    @Override
+    public void validate() {
+        Assert2.hasTextOf(name, "name");
+    }
 
 }

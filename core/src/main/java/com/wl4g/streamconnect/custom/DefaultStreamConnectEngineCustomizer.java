@@ -23,7 +23,7 @@ import com.wl4g.streamconnect.config.StreamConnectConfiguration;
 import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
 import com.wl4g.streamconnect.coordinator.IStreamConnectCoordinator;
 import com.wl4g.streamconnect.exception.StreamConnectException;
-import com.wl4g.streamconnect.source.ISubscribeSourceProvider;
+import com.wl4g.streamconnect.source.ISourceProvider;
 import com.wl4g.streamconnect.util.Crc32Util;
 import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -76,7 +76,7 @@ public class DefaultStreamConnectEngineCustomizer implements StreamConnectEngine
         }
 
         // Getting the source provider by pipeline name.
-        final ISubscribeSourceProvider sourceProvider = safeList(config.getPipelines())
+        final ISourceProvider sourceProvider = safeList(config.getPipelines())
                 .stream()
                 .filter(p -> StringUtils.equals(p.getName(), pipelineName))
                 .findFirst()

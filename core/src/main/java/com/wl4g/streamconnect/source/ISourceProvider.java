@@ -18,33 +18,24 @@
 package com.wl4g.streamconnect.source;
 
 import com.wl4g.streamconnect.config.StreamConnectProperties.SubscribeSourceProperties;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
+import javax.validation.constraints.NotBlank;
 import java.util.List;
 
 /**
- * The {@link JDBCSubscribeSourceProvider}
+ * The {@link ISourceProvider}
  *
  * @author James Wong
  * @since v1.0
  **/
-@Getter
-@Setter
-@NoArgsConstructor
-public class JDBCSubscribeSourceProvider extends AbstractSubscribeSourceProvider {
+public interface ISourceProvider {
 
-    public static final String TYPE_NAME = "JDBC_SOURCE";
+    String getName();
 
-    @Override
-    public String getType() {
-        return TYPE_NAME;
-    }
+    String getType();
 
-    @Override
-    public List<SubscribeSourceProperties> loadSources(String pipelineName) {
-        throw new UnsupportedOperationException();
-    }
+    void validate();
+
+    List<SubscribeSourceProperties> loadSources(@NotBlank String pipelineName);
 
 }

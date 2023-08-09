@@ -29,7 +29,7 @@ import com.wl4g.streamconnect.coordinator.strategy.ShardingStrategyFactory;
 import com.wl4g.streamconnect.filter.IProcessFilter;
 import com.wl4g.streamconnect.map.IProcessMapper;
 import com.wl4g.streamconnect.sink.IProcessSink;
-import com.wl4g.streamconnect.source.ISubscribeSourceProvider;
+import com.wl4g.streamconnect.source.ISourceProvider;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -107,9 +107,9 @@ public class StreamConnectConfiguration {
         definitions.setCheckpointMap(checkpointMap);
 
         // Parse to source.
-        final Map<String, ISubscribeSourceProvider> sourceMap = safeList(definitionProps.getSources())
+        final Map<String, ISourceProvider> sourceMap = safeList(definitionProps.getSources())
                 .stream()
-                .collect(toMap(ISubscribeSourceProvider::getName, e -> e));
+                .collect(toMap(ISourceProvider::getName, e -> e));
         definitions.setSourceMap(sourceMap);
 
         // Parse to filter.
@@ -151,7 +151,7 @@ public class StreamConnectConfiguration {
         pipeline.setCheckpoint(checkpoint);
 
         // Parse to pipeline source.
-        final ISubscribeSourceProvider sourceProvider = safeList(properties.getDefinitions().getSources())
+        final ISourceProvider sourceProvider = safeList(properties.getDefinitions().getSources())
                 .stream()
                 .filter(s -> StringUtils.equals(pipelineProps.getSource(), s.getName()))
                 .findFirst()
@@ -227,7 +227,7 @@ public class StreamConnectConfiguration {
     @NoArgsConstructor
     public static class DefinitionsConfig {
         private @NotEmpty Map<String, IProcessCheckpoint> checkpointMap;
-        private @NotEmpty Map<String, ISubscribeSourceProvider> sourceMap;
+        private @NotEmpty Map<String, ISourceProvider> sourceMap;
         private @NotNull Map<String, IProcessFilter> filterMap;
         private @Null Map<String, IProcessMapper> mapperMap;
         private @Null Map<String, IProcessSink> sinkMap;
@@ -252,7 +252,7 @@ public class StreamConnectConfiguration {
         private @NotBlank String name;
         private @NotNull boolean enable;
         private @NotNull IProcessCheckpoint checkpoint;
-        private @NotNull ISubscribeSourceProvider sourceProvider;
+        private @NotNull ISourceProvider sourceProvider;
         private @NotNull Map<String, IProcessFilter> filterMap;
         private @Null Map<String, IProcessMapper> mapperMap;
         private @Null IProcessSink sink;

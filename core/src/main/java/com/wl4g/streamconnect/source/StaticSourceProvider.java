@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The {@link StaticSubscribeSourceProvider}
+ * The {@link StaticSourceProvider}
  *
  * @author James Wong
  * @since v1.0
@@ -34,7 +34,7 @@ import java.util.List;
 @Getter
 @Setter
 @NoArgsConstructor
-public class StaticSubscribeSourceProvider extends AbstractSubscribeSourceProvider {
+public class StaticSourceProvider extends AbstractSourceProvider {
 
     public static final String TYPE_NAME = "STATIC_SOURCE";
 

@@ -29,7 +29,7 @@ import com.wl4g.streamconnect.filter.StandardProcessFilter;
 import com.wl4g.streamconnect.map.IProcessMapper;
 import com.wl4g.streamconnect.sink.IProcessSink;
 import com.wl4g.streamconnect.sink.NoOpProcessSink;
-import com.wl4g.streamconnect.source.ISubscribeSourceProvider;
+import com.wl4g.streamconnect.source.ISourceProvider;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -101,7 +101,7 @@ public class StreamConnectProperties implements InitializingBean {
     @NoArgsConstructor
     public static class SubscribeDefinitionProperties {
         private @Builder.Default List<IProcessCheckpoint> checkpoints = new ArrayList<>(2);
-        private @Builder.Default List<ISubscribeSourceProvider> sources = new ArrayList<>(2);
+        private @Builder.Default List<ISourceProvider> sources = new ArrayList<>(2);
         private @Builder.Default List<IProcessFilter> filters = new ArrayList<>(2);
         private @Builder.Default List<IProcessMapper> mappers = new ArrayList<>(2);
         private @Builder.Default List<IProcessSink> sinks = new ArrayList<>(2);
@@ -117,7 +117,7 @@ public class StreamConnectProperties implements InitializingBean {
             Assert2.notEmptyOf(tenants, "tenants");
 
             checkpoints.forEach(IProcessCheckpoint::validate);
-            sources.forEach(ISubscribeSourceProvider::validate);
+            sources.forEach(ISourceProvider::validate);
             filters.forEach(IProcessFilter::validate);
             sinks.forEach(IProcessSink::validate);
             subscribers.forEach(SubscriberInfo::validate);
@@ -128,7 +128,7 @@ public class StreamConnectProperties implements InitializingBean {
                     .map(IProcessCheckpoint::getName).collect(toList())).size(), "checkpoint name duplicate");
             // Check for sources name duplicate.
             Assert2.isTrueOf(sources.size() == new HashSet<>(sources.stream()
-                    .map(ISubscribeSourceProvider::getName).collect(toList())).size(), "sources name duplicate");
+                    .map(ISourceProvider::getName).collect(toList())).size(), "sources name duplicate");
             // Check for filters name duplicate.
             Assert2.isTrueOf(filters.size() == new HashSet<>(filters.stream()
                     .map(IProcessFilter::getName).collect(toList())).size(), "filters name duplicate");

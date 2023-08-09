@@ -20,7 +20,7 @@ import com.wl4g.streamconnect.checkpoint.IProcessCheckpoint;
 import com.wl4g.streamconnect.filter.IProcessFilter;
 import com.wl4g.streamconnect.map.IProcessMapper;
 import com.wl4g.streamconnect.sink.IProcessSink;
-import com.wl4g.streamconnect.source.ISubscribeSourceProvider;
+import com.wl4g.streamconnect.source.ISourceProvider;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.constructor.BaseConstructor;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -44,7 +44,7 @@ public class StreamConnectYamlConstructor extends Constructor {
             constructor.addTypeDescription(new TypeDescription(checkpoint.getClass(), "!".concat(checkpoint.getType())));
         }
         // Register subscribe sources provider.
-        for (ISubscribeSourceProvider provider : ServiceLoader.load(ISubscribeSourceProvider.class)) {
+        for (ISourceProvider provider : ServiceLoader.load(ISourceProvider.class)) {
             constructor.addTypeDescription(new TypeDescription(provider.getClass(), "!".concat(provider.getType())));
         }
         // Register subscribe filters.

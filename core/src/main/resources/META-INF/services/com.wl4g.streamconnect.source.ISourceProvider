@@ -13,5 +13,5 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-com.wl4g.streamconnect.source.StaticSubscribeSourceProvider
-com.wl4g.streamconnect.source.JDBCSubscribeSourceProvider
+com.wl4g.streamconnect.source.StaticSourceProvider
+com.wl4g.streamconnect.source.JDBCSourceProvider
