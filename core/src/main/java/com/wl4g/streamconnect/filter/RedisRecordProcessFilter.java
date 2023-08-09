@@ -41,13 +41,12 @@ public class RedisRecordProcessFilter extends AbstractProcessFilter {
 
     @Override
     protected void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers) {
-        // TODO
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public boolean doFilter(SubscriberInfo subscriber, ConsumerRecord<String, ObjectNode> record) {
-        // TODO
-        return false;
+        throw new UnsupportedOperationException();
     }
 
 
