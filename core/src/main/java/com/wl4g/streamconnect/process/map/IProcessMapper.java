@@ -30,11 +30,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  **/
 public interface IProcessMapper extends IStreamConnectSpi {
 
-    default ConsumerRecord<String, ObjectNode> doMap(
-            ProcessMapperChain chain,
-            SubscriberInfo subscriber,
-            ConsumerRecord<String, ObjectNode> record) {
-        return chain.doMap(subscriber, record);
+    default ConsumerRecord<String, ObjectNode> doMap(SubscriberInfo subscriber,
+                                                     ConsumerRecord<String, ObjectNode> record) {
+        return record;
     }
 
 }

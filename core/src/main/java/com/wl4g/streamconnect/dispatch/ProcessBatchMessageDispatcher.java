@@ -29,14 +29,12 @@ import com.wl4g.streamconnect.coordinator.CachingSubscriberRegistry;
 import com.wl4g.streamconnect.custom.StreamConnectEngineCustomizer;
 import com.wl4g.streamconnect.exception.GiveUpRetryExecutionException;
 import com.wl4g.streamconnect.exception.StreamConnectException;
-import com.wl4g.streamconnect.process.filter.ProcessFilterChain;
-import com.wl4g.streamconnect.process.filter.ProcessFilterFactory;
-import com.wl4g.streamconnect.process.map.ProcessMapperChain;
-import com.wl4g.streamconnect.process.map.ProcessMapperFactory;
 import com.wl4g.streamconnect.meter.StreamConnectMeter.MetricsName;
 import com.wl4g.streamconnect.meter.StreamConnectMeter.MetricsTag;
 import com.wl4g.streamconnect.meter.StreamConnectMeterEventHandler.CountMeterEvent;
 import com.wl4g.streamconnect.meter.StreamConnectMeterEventHandler.TimingMeterEvent;
+import com.wl4g.streamconnect.process.ComplexProcessChain;
+import com.wl4g.streamconnect.process.ComplexProcessChain.ComplexProcessedResult;
 import com.wl4g.streamconnect.util.Crc32Util;
 import com.wl4g.streamconnect.util.NamedThreadFactory;
 import lombok.AllArgsConstructor;
@@ -324,14 +322,14 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
                 });
     }
 
-    private List<SubscriberRecord> matchToSubscribesRecords(ProcessFilterChain filterChain,
+    private List<SubscriberRecord> matchToSubscribesRecords(ComplexProcessChain complexChain,
                                                             List<ConsumerRecord<String, ObjectNode>> records) {
         final Collection<SubscriberInfo> subscribers = registry.getSubscribers(pipelineConfig.getName());
 
         // Merge subscription server configurations and update to filters.
         // Notice: According to the consumption filtering model design, it is necessary to share groupId
         // consumption for unified processing, So here, all subscriber filtering rules should be merged.
-        filterChain.updateMergeSubscribeConditions(subscribers);
+        complexChain.initFilterMergeSubscribeConditions(subscribers);
 
         return safeList(records).parallelStream().map(r ->
                         safeList(subscribers)
@@ -349,11 +347,10 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
 
     private Set<CheckpointSentResult> doParallelFilterAndSendAsync(List<ConsumerRecord<String, ObjectNode>> records) {
         // Obtain to subscribe filter chain.
-        final ProcessFilterChain filterChain = ProcessFilterFactory.obtainFilterChain(pipelineConfig.getName(), null); // TODO
-        final ProcessMapperChain mapperChain = ProcessMapperFactory.obtainMapperChain(pipelineConfig.getName(), null); // TODO
+        final ComplexProcessChain complexChain = new ComplexProcessChain(pipelineConfig.getProcesses());
 
         // Match wrap to subscriber rules records.
-        final List<SubscriberRecord> subscriberRecords = matchToSubscribesRecords(filterChain, records);
+        final List<SubscriberRecord> subscriberRecords = matchToSubscribesRecords(complexChain, records);
 
         // Add timing filter metrics.
         // The benefit of not using lamda records is better use of arthas for troubleshooting during operation.
@@ -362,7 +359,7 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
         // Execute custom filters in parallel them to different send executor queues.
         final List<FilteredResult> filteredResults = safeList(subscriberRecords).stream()
                 .map(sr -> new FilteredResult(sr,
-                        determineFilterExecutor(sr).submit(buildProcessTask(sr, filterChain, mapperChain)),
+                        determineFilterExecutor(sr).submit(buildProcessTask(sr, complexChain)),
                         System.nanoTime(), 1))
                 .collect(toList());
 
@@ -404,7 +401,7 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
                             if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
                                 continue; // give up and lose
                             }
-                            enqueueFilterExecutor(filterChain, mapperChain, fr, filteredResults);
+                            enqueueFilterExecutor(complexChain, fr, filteredResults);
                         }
                     } catch (ExecutionException ex) {
                         log.error("{} :: Unable not to getting subscribe filter result.", groupId, ex);
@@ -418,7 +415,7 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
                                 if (shouldGiveUpRetry(fr.getRetryBegin(), fr.getRetryTimes())) {
                                     continue; // give up and lose
                                 }
-                                enqueueFilterExecutor(filterChain, mapperChain, fr, filteredResults);
+                                enqueueFilterExecutor(complexChain, fr, filteredResults);
                             }
                         }
                     } finally {
@@ -464,28 +461,21 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
         return executor;
     }
 
-    private void enqueueFilterExecutor(ProcessFilterChain filterChain,
-                                       ProcessMapperChain mapperChain,
+    private void enqueueFilterExecutor(ComplexProcessChain complexChain,
                                        FilteredResult fr,
                                        List<FilteredResult> filteredResults) {
         log.info("{} :: Re-enqueue Requeue and retry processing. fr : {}", groupId, fr);
         final SubscriberRecord sr = fr.getRecord();
         filteredResults.add(new FilteredResult(fr.getRecord(),
-                determineFilterExecutor(fr.getRecord())
-                        .submit(buildProcessTask(sr, filterChain, mapperChain)),
+                determineFilterExecutor(fr.getRecord()).submit(buildProcessTask(sr, complexChain)),
                 fr.getRetryBegin(), fr.getRetryTimes() + 1));
     }
 
     private Callable<FilteredFutureResult> buildProcessTask(SubscriberRecord sr,
-                                                            ProcessFilterChain filterChain,
-                                                            ProcessMapperChain mapperChain) {
+                                                            ComplexProcessChain complexChain) {
         return () -> {
-            final boolean matched = filterChain.doFilter(sr.getSubscriber(), sr.getRecord());
-            ConsumerRecord<String, ObjectNode> mapped = sr.getRecord();
-            if (matched) {
-                mapped = mapperChain.doMap(sr.getSubscriber(), sr.getRecord());
-            }
-            return new FilteredFutureResult(matched, mapped);
+            final ComplexProcessedResult result = complexChain.doProcess(sr.getSubscriber(), sr.getRecord());
+            return new FilteredFutureResult(result.isMatched(), result.getRecord());
         };
     }
 
@@ -577,7 +567,8 @@ public class ProcessBatchMessageDispatcher extends AbstractBatchMessageDispatche
      *
      * @param completedCheckpointSentResults completed sent results
      */
-    private void preferredAcknowledgeWithRetriesAtMostStrictly(Set<CheckpointSentResult> completedCheckpointSentResults) {
+    private void preferredAcknowledgeWithRetriesAtMostStrictly(
+            Set<CheckpointSentResult> completedCheckpointSentResults) {
         // grouping and sorting.
         final Map<TopicPartition, List<ConsumerRecord<String, ObjectNode>>> partitionRecords = new HashMap<>(completedCheckpointSentResults.size());
         for (CheckpointSentResult checkpointSentResult : completedCheckpointSentResults) {

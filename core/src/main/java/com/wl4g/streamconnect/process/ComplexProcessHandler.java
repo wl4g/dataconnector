@@ -23,14 +23,14 @@ import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * The {@link ProcessComplexHandler}
+ * The {@link ComplexProcessHandler}
  *
  * @author James Wong
  * @since v1.0
  **/
-public abstract class ProcessComplexHandler extends NamedStreamConnectSpi {
+public abstract class ComplexProcessHandler extends NamedStreamConnectSpi {
 
-    abstract ConsumerRecord<String, ObjectNode> doProcess(SubscriberInfo subscriber,
-                                                          ConsumerRecord<String, ObjectNode> record);
+    protected abstract ConsumerRecord<String, ObjectNode> doProcess(SubscriberInfo subscriber,
+                                                                    ConsumerRecord<String, ObjectNode> record);
 
 }

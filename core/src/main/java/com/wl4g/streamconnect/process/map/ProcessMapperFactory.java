@@ -44,11 +44,6 @@ public class ProcessMapperFactory {
 
     private final static Map<String, IProcessMapper[]> CACHED = new ConcurrentHashMap<>(2);
 
-    public static ProcessMapperChain obtainMapperChain(@NotBlank final String pipelineName,
-                                                       @NotEmpty final List<String> types) {
-        return new ProcessMapperChain(obtainMappers(pipelineName, types));
-    }
-
     /**
      * Get subscribe mapper.
      *
@@ -77,7 +72,7 @@ public class ProcessMapperFactory {
         return StreamSupport
                 .stream(ServiceLoader.load(IProcessMapper.class).spliterator(), false)
                 .filter(m -> types.contains(m.getType()))
-                .map(m -> ObjectInstantiators.newInstance(m.getClass())) // no-cached
+                .map(m -> ObjectInstantiators.newInstance(m.getClass())) // no-cached-instance
                 .sorted(Comparator.comparingInt(IProcessMapper::getOrder))
                 .toArray(IProcessMapper[]::new);
     }

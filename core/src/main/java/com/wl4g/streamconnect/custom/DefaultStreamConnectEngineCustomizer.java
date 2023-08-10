@@ -76,12 +76,7 @@ public class DefaultStreamConnectEngineCustomizer implements StreamConnectEngine
         }
 
         // Getting the source provider by pipeline name.
-        final ISourceProvider sourceProvider = safeList(config.getPipelines())
-                .stream()
-                .filter(p -> StringUtils.equals(p.getName(), pipelineName))
-                .findFirst()
-                .orElseThrow(() -> new StreamConnectException(String.format("Not found pipeline '%s'", pipelineName)))
-                .getSourceProvider();
+        final ISourceProvider sourceProvider = config.getRequiredPipelineConfig(pipelineName).getSourceProvider();
 
         // Getting the source config by tenant ID.
         return safeList(sourceProvider.loadSources(pipelineName))

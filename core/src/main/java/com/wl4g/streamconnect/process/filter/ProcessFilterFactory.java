@@ -44,11 +44,6 @@ public class ProcessFilterFactory {
 
     private final static Map<String, IProcessFilter[]> CACHED = new ConcurrentHashMap<>(2);
 
-    public static ProcessFilterChain obtainFilterChain(@NotBlank final String pipelineName,
-                                                       @NotEmpty final List<String> types) {
-        return new ProcessFilterChain(obtainFilters(pipelineName, types));
-    }
-
     /**
      * Get subscribe filter.
      *
@@ -77,7 +72,7 @@ public class ProcessFilterFactory {
         return StreamSupport
                 .stream(ServiceLoader.load(IProcessFilter.class).spliterator(), false)
                 .filter(f -> types.contains(f.getType()))
-                .map(f -> ObjectInstantiators.newInstance(f.getClass())) // no-cached
+                .map(f -> ObjectInstantiators.newInstance(f.getClass())) // no-cached-instance
                 .sorted(Comparator.comparingInt(IProcessFilter::getOrder))
                 .toArray(IProcessFilter[]::new);
     }

@@ -33,15 +33,12 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.util.Map;
 import java.util.Objects;
-
-import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 
 /**
  * The {@link StreamConnectEngineFacade}
@@ -129,10 +126,7 @@ public class StreamConnectEngineFacade {
 
     private PipelineConfig getRequiredPipelineProperties(
             String pipelineName) {
-        return safeList(config.getPipelines()).stream()
-                .filter(p -> StringUtils.equals(p.getName(), pipelineName))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(String.format("Not found the pipeline properties of %s", pipelineName)));
+        return config.getRequiredPipelineConfig(pipelineName);
     }
 
     private SubscribePipelineBootstrap getRequiredPipelineBootstrap(

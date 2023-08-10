@@ -17,12 +17,14 @@
 
 package com.wl4g.streamconnect.process.filter;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
+import com.wl4g.streamconnect.process.ComplexProcessHandler;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.util.Collection;
 
@@ -35,7 +37,7 @@ import java.util.Collection;
 @Getter
 @Setter
 @Slf4j
-public abstract class AbstractProcessFilter extends NamedStreamConnectSpi implements IProcessFilter {
+public abstract class AbstractProcessFilter extends ComplexProcessHandler implements IProcessFilter {
 
     private long mergeConditionsDelay = 2_000L;
 
@@ -55,5 +57,12 @@ public abstract class AbstractProcessFilter extends NamedStreamConnectSpi implem
     }
 
     protected abstract void doUpdateMergeConditions(Collection<SubscriberInfo> subscribers);
+
+    @Override
+    protected ConsumerRecord<String, ObjectNode> doProcess(
+            SubscriberInfo subscriber,
+            ConsumerRecord<String, ObjectNode> record) {
+        return null;
+    }
 
 }

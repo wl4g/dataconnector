@@ -349,16 +349,14 @@ public class StreamConnectProperties implements InitializingBean {
         private @Builder.Default boolean enable = true;
         private @NotBlank String checkpoint;
         private @NotBlank String source;
-        private @NotEmpty List<String> filters;
-        private @NotEmpty List<String> mappers;
+        private @NotEmpty List<String> processes;
         private @NotBlank String sink;
 
         public void validate() {
             Assert2.hasTextOf(name, "name");
             Assert2.hasTextOf(checkpoint, "checkpoint");
             Assert2.hasTextOf(source, "source");
-            Assert2.notEmptyOf(filters, "filters");
-            Assert2.notEmptyOf(mappers, "mappers");
+            Assert2.notEmptyOf(processes, "processes");
             Assert2.hasTextOf(sink, "sink");
         }
     }

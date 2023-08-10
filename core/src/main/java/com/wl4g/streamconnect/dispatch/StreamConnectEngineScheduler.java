@@ -91,7 +91,7 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
         this.customizer = notNullOf(customizer, "customizer");
         this.registry = notNullOf(registry, "registry");
         this.eventPublisher = notNullOf(eventPublisher, "eventPublisher");
-        this.pipelineRegistry = new ConcurrentHashMap<>(config.getPipelines().size());
+        this.pipelineRegistry = new ConcurrentHashMap<>(config.getPipelineMap().size());
     }
 
     public Map<String, SubscribePipelineBootstrap> getPipelineRegistry() {
@@ -129,7 +129,7 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
 
     private void registerAllPipelines() {
         log.info("Registering to all pipelines ...");
-        safeList(config.getPipelines()).forEach(this::registerPipeline);
+        safeMap(config.getPipelineMap()).values().forEach(this::registerPipeline);
 
         log.info("---------------- ::: [Begin] Registered all pipeline subscribers details ::: ----------------");
         safeMap(pipelineRegistry)

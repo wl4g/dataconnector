@@ -17,10 +17,13 @@
 
 package com.wl4g.streamconnect.process.map;
 
-import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.streamconnect.bean.SubscriberInfo;
+import com.wl4g.streamconnect.process.ComplexProcessHandler;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
  * The {@link AbstractProcessMapper}
@@ -31,5 +34,13 @@ import lombok.extern.slf4j.Slf4j;
 @Getter
 @Setter
 @Slf4j
-public abstract class AbstractProcessMapper extends NamedStreamConnectSpi implements IProcessMapper {
+public abstract class AbstractProcessMapper extends ComplexProcessHandler implements IProcessMapper {
+
+    @Override
+    protected ConsumerRecord<String, ObjectNode> doProcess(
+            SubscriberInfo subscriber,
+            ConsumerRecord<String, ObjectNode> record) {
+        return null;
+    }
+
 }

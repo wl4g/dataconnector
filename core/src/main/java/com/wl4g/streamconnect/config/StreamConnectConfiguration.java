@@ -25,6 +25,8 @@ import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoo
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.IShardingStrategy;
 import com.wl4g.streamconnect.coordinator.strategy.ShardingStrategyFactory;
+import com.wl4g.streamconnect.exception.StreamConnectException;
+import com.wl4g.streamconnect.process.ComplexProcessHandler;
 import com.wl4g.streamconnect.process.filter.IProcessFilter;
 import com.wl4g.streamconnect.process.map.IProcessMapper;
 import com.wl4g.streamconnect.process.sink.IProcessSink;
@@ -41,11 +43,12 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Objects;
+import java.util.Optional;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
+import static com.wl4g.infra.common.collection.CollectionUtils2.safeMap;
 import static java.util.stream.Collectors.toMap;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
@@ -61,7 +64,7 @@ public class StreamConnectConfiguration {
 
     private final StreamConnectProperties properties;
     private final DefinitionsConfig definitions;
-    private final List<PipelineConfig> pipelines;
+    private final Map<String, PipelineConfig> pipelineMap;
     private final CoordinatorConfig coordinator;
 
     public StreamConnectConfiguration(@NotNull StreamConnectProperties properties) {
@@ -72,10 +75,10 @@ public class StreamConnectConfiguration {
         this.definitions = parseDefinitionsConfig(properties);
 
         // Parsing to actuate source,filter,sink
-        this.pipelines = safeList(properties.getPipelines())
+        this.pipelineMap = safeList(properties.getPipelines())
                 .stream()
                 .map(p -> parsePipelineConfig(properties, p))
-                .collect(Collectors.toList());
+                .collect(toMap(PipelineConfig::getName, e -> e));
 
         // Parsing to actuate coordinator config.
         this.coordinator = parseCoordinatorConfig(properties);
@@ -85,12 +88,21 @@ public class StreamConnectConfiguration {
 
     public StreamConnectConfiguration validate() {
         Assert2.notNullOf(definitions, "definitions");
-        Assert2.notEmptyOf(pipelines, "pipelines");
+        Assert2.notEmptyOf(pipelineMap, "pipelines");
         Assert2.notNullOf(coordinator, "coordinator");
         definitions.validate();
-        safeList(pipelines).forEach(PipelineConfig::validate);
+        safeMap(pipelineMap).values().forEach(PipelineConfig::validate);
         coordinator.validate();
         return this;
+    }
+
+    public PipelineConfig getRequiredPipelineConfig(@NotBlank String pipelineName) {
+        Assert2.hasTextOf(pipelineName, "pipelineName");
+        final PipelineConfig pipelineConfig = safeMap(getPipelineMap()).get(pipelineName);
+        if (Objects.isNull(pipelineConfig)) {
+            throw new StreamConnectException(String.format("Not found pipeline '%s'", pipelineName));
+        }
+        return pipelineConfig;
     }
 
     private DefinitionsConfig parseDefinitionsConfig(@NotNull StreamConnectProperties properties) {
@@ -158,27 +170,27 @@ public class StreamConnectConfiguration {
                         pipelineProps.getSource())));
         pipeline.setSourceProvider(sourceProvider);
 
-        // Parse to pipeline filters.
-        final Map<String, IProcessFilter> filterMap = safeList(pipelineProps.getFilters())
+        // Merge parse to pipeline filters and mappers.
+        final ComplexProcessHandler[] processes = safeList(pipelineProps.getProcesses())
                 .stream()
-                .map(f -> safeList(properties.getDefinitions().getFilters())
-                        .stream()
-                        .filter(s -> StringUtils.equals(f, s.getName()))
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException(String.format("Not found the filter definition '%s'", f))))
-                .collect(toMap(IProcessFilter::getName, e -> e));
-        pipeline.setFilterMap(filterMap);
-
-        // Parse to pipeline mappers.
-        final Map<String, IProcessMapper> mapperMap = safeList(pipelineProps.getMappers())
-                .stream()
-                .map(f -> safeList(properties.getDefinitions().getMappers())
-                        .stream()
-                        .filter(s -> StringUtils.equals(f, s.getName()))
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException(String.format("Not found the mapper definition '%s'", f))))
-                .collect(toMap(IProcessMapper::getName, e -> e));
-        pipeline.setMapperMap(mapperMap);
+                .map(processName -> {
+                    // Find the definition if filter.
+                    final Optional<IProcessFilter> foundFilterOp = safeList(properties.getDefinitions().getFilters())
+                            .stream()
+                            .filter(s -> StringUtils.equals(processName, s.getName()))
+                            .findFirst();
+                    // Find the definition if mapper.
+                    final Optional<IProcessMapper> foundMapperOp = safeList(properties.getDefinitions().getMappers())
+                            .stream()
+                            .filter(s -> StringUtils.equals(processName, s.getName()))
+                            .findFirst();
+                    // Check the definition if filter or mapper.
+                    return foundFilterOp
+                            .map(iProcessFilter -> (ComplexProcessHandler) iProcessFilter)
+                            .orElseGet(() -> (ComplexProcessHandler) foundMapperOp.orElseThrow(() -> new IllegalStateException(
+                                    String.format("Not found the filter or mapper definition '%s'", processName))));
+                }).toArray(ComplexProcessHandler[]::new);
+        pipeline.setProcesses(processes);
 
         // Parse to pipeline sink.
         if (isNotBlank(pipelineProps.getSink())) {
@@ -245,16 +257,14 @@ public class StreamConnectConfiguration {
         private @NotNull boolean enable;
         private @NotNull IProcessCheckpoint checkpoint;
         private @NotNull ISourceProvider sourceProvider;
-        private @NotNull Map<String, IProcessFilter> filterMap;
-        private @Null Map<String, IProcessMapper> mapperMap;
+        private @NotEmpty ComplexProcessHandler[] processes;
         private @Null IProcessSink sink;
 
         public void validate() {
             Assert2.hasTextOf(name, "name");
             Assert2.notNullOf(checkpoint, "checkpoint");
             Assert2.notNullOf(sourceProvider, "sourceProvider");
-            Assert2.notEmptyOf(filterMap, "filterMap");
-            //Assert2.notEmptyOf(mapperMap, "mapperMap");
+            Assert2.notEmptyOf(processes, "processes");
             //Assert2.notNullOf(sink, "sink");
         }
     }

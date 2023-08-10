@@ -209,8 +209,9 @@ stream-connect:
       enable: true # By default: true
       checkpoint: checkpoint_1
       source: subscribeSource_1
-      filters:
+      processes:
         - subscribeFilter_1
-      mappers:
         - subscribeMapper_1
+      #  - subscribeFilter_2
+      #  - subscribeMapper_2
       sink: sink_1

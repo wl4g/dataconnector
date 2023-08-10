@@ -79,8 +79,8 @@ public class CheckpointTopicManager {
      * @param timeout The timeout period for calling the broker asynchronously at each step.
      */
     public void initPipelinesTopicIfNecessary(int timeout) throws TopicConfigurationException {
-        log.info("Initializing all pipeline topics if necessary of {} ...", config.getPipelines().size());
-        config.getPipelines().forEach(pipeline -> {
+        log.info("Initializing all pipeline topics if necessary of {} ...", config.getPipelineMap().size());
+        safeMap(config.getPipelineMap()).values().forEach(pipeline -> {
             try {
                 addSubscribersTopicIfNecessary(pipeline, registry.getSubscribers(pipeline.getName()), timeout);
             } catch (Throwable ex) {
@@ -102,7 +102,7 @@ public class CheckpointTopicManager {
                                                int timeout) throws TopicConfigurationException {
         Assert2.notNullOf(pipelineConfig, "pipelineConfig");
         log.info("{} :: Creating topics if necessary of {} ...", pipelineConfig.getName(),
-                config.getPipelines().size());
+                config.getPipelineMap().size());
 
         final IProcessCheckpoint checkpoint = pipelineConfig.getCheckpoint();
         final String topicPrefix = checkpoint.getTopicPrefix();
