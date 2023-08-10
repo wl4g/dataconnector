@@ -18,6 +18,7 @@
 package com.wl4g.streamconnect.source;
 
 import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
+import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 
 import javax.validation.constraints.NotBlank;
 import java.util.List;
@@ -28,13 +29,7 @@ import java.util.List;
  * @author James Wong
  * @since v1.0
  **/
-public interface ISourceProvider {
-
-    String getName();
-
-    String getType();
-
-    void validate();
+public interface ISourceProvider extends IStreamConnectSpi {
 
     List<SourceProperties> loadSources(@NotBlank String pipelineName);
 

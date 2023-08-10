@@ -17,7 +17,7 @@
 
 package com.wl4g.streamconnect.checkpoint;
 
-import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -31,17 +31,5 @@ import lombok.extern.slf4j.Slf4j;
 @Getter
 @Setter
 @Slf4j
-public abstract class AbstractProcessCheckpoint implements IProcessCheckpoint {
-    private String name;
-
-    @Override
-    public String getType() {
-        return null;
-    }
-
-    @Override
-    public void validate() {
-        Assert2.hasTextOf(name, "name");
-    }
-
+public abstract class AbstractProcessCheckpoint extends NamedStreamConnectSpi implements IProcessCheckpoint {
 }

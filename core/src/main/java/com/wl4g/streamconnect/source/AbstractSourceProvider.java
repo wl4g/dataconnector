@@ -17,7 +17,7 @@
 
 package com.wl4g.streamconnect.source;
 
-import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,13 +29,5 @@ import lombok.Setter;
  **/
 @Getter
 @Setter
-public abstract class AbstractSourceProvider implements ISourceProvider {
-
-    private String name;
-
-    @Override
-    public void validate() {
-        Assert2.hasTextOf(name, "name");
-    }
-
+public abstract class AbstractSourceProvider extends NamedStreamConnectSpi implements ISourceProvider {
 }

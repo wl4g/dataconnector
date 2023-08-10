@@ -157,12 +157,9 @@ public class StreamConnectProperties implements InitializingBean {
     @Setter
     @SuperBuilder
     @ToString
+    @NoArgsConstructor
     public static class SinkProperties extends BaseConsumerProperties {
         private @Builder.Default String groupIdPrefix = "subscribe_group_sink_";
-
-        public SinkProperties() {
-            setName(NoOpProcessSink.TYPE_NAME);
-        }
 
         public void validate() {
             super.validate();
