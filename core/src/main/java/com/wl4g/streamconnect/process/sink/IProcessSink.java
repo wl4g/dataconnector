@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.sink;
+package com.wl4g.streamconnect.process.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.config.StreamConnectProperties.SinkProperties;

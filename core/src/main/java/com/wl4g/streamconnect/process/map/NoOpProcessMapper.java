@@ -15,34 +15,22 @@
  *
  */
 
-package com.wl4g.streamconnect.sink;
-
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-
-import java.io.Serializable;
-import java.util.concurrent.Future;
+package com.wl4g.streamconnect.process.map;
 
 /**
- * The {@link SendMQProcessSink}
+ * No-operation mapper, you can refer to this mapper to implements
+ * data permissions that support filtering by each record fields.
  *
  * @author James Wong
  * @since v1.0
  **/
-public class SendMQProcessSink extends AbstractProcessSink {
+public class NoOpProcessMapper extends AbstractProcessMapper {
 
-    public static final String TYPE_NAME = "SEND_MQ_SINK";
+    public static final String TYPE_NAME = "NOOP_MAPPER";
 
     @Override
     public String getType() {
         return TYPE_NAME;
-    }
-
-    @Override
-    public Future<? extends Serializable> doSink(String subscriberId,
-                                                 boolean sequence,
-                                                 ConsumerRecord<String, ObjectNode> record) {
-        throw new UnsupportedOperationException();
     }
 
 }

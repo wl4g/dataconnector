@@ -13,5 +13,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-com.wl4g.streamconnect.sink.NoOpProcessSink
-com.wl4g.streamconnect.sink.SendMQProcessSink
+com.wl4g.streamconnect.process.filter.StandardExprProcessFilter

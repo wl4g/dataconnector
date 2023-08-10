@@ -15,22 +15,26 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.process.map;
+
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.wl4g.streamconnect.bean.SubscriberInfo;
+import com.wl4g.streamconnect.framework.IStreamConnectSpi;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * No-operation mapper, you can refer to this mapper to implements
- * data permissions that support filtering by each record fields.
+ * The custom record column processing(transform,filtering).
  *
  * @author James Wong
  * @since v1.0
  **/
-public class NoOpProcessMapper extends AbstractProcessMapper {
+public interface IProcessMapper extends IStreamConnectSpi {
 
-    public static final String TYPE_NAME = "NOOP_MAPPER";
-
-    @Override
-    public String getType() {
-        return TYPE_NAME;
+    default ConsumerRecord<String, ObjectNode> doMap(
+            ProcessMapperChain chain,
+            SubscriberInfo subscriber,
+            ConsumerRecord<String, ObjectNode> record) {
+        return chain.doMap(subscriber, record);
     }
 
 }

@@ -15,26 +15,40 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.process.map;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import com.wl4g.streamconnect.framework.IStreamConnectSpi;
+import lombok.Getter;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import javax.annotation.concurrent.NotThreadSafe;
+import java.util.Objects;
+
 /**
- * The custom record column processing(transform,filtering).
+ * The {@link ProcessMapperChain}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface IProcessMapper extends IStreamConnectSpi {
+@Getter
+@NotThreadSafe
+public class ProcessMapperChain {
 
-    default ConsumerRecord<String, ObjectNode> doMap(
-            ProcessMapperChain chain,
-            SubscriberInfo subscriber,
-            ConsumerRecord<String, ObjectNode> record) {
-        return chain.doMap(subscriber, record);
+    private final IProcessMapper[] mappers;
+    private int index = 0;
+
+    public ProcessMapperChain(IProcessMapper[] mappers) {
+        this.mappers = mappers;
+    }
+
+    public ConsumerRecord<String, ObjectNode> doMap(SubscriberInfo subscriber,
+                                                    ConsumerRecord<String, ObjectNode> record) {
+        ConsumerRecord<String, ObjectNode> mapped = record;
+        if (Objects.nonNull(mappers) && index < mappers.length) {
+            mapped = mappers[index++].doMap(this, subscriber, record);
+        }
+        return mapped;
     }
 
 }

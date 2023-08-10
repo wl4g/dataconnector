@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.process.map;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.infra.common.reflect.ObjectInstantiators;

@@ -15,26 +15,22 @@
  *
  */
 
-package com.wl4g.streamconnect.filter;
+package com.wl4g.streamconnect.process;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import com.wl4g.streamconnect.framework.IStreamConnectSpi;
+import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import java.util.Collection;
-
 /**
- * The custom record processing(filtering).
+ * The {@link ProcessComplexHandler}
  *
  * @author James Wong
  * @since v1.0
  **/
-public interface IProcessFilter extends IStreamConnectSpi {
+public abstract class ProcessComplexHandler extends NamedStreamConnectSpi {
 
-    void updateMergeSubscribeConditions(Collection<SubscriberInfo> subscribers);
-
-    boolean doFilter(SubscriberInfo subscriber,
-                     ConsumerRecord<String, ObjectNode> record);
+    abstract ConsumerRecord<String, ObjectNode> doProcess(SubscriberInfo subscriber,
+                                                          ConsumerRecord<String, ObjectNode> record);
 
 }

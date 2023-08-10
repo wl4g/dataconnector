@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.filter;
+package com.wl4g.streamconnect.process.filter;
 
 import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.infra.common.reflect.ObjectInstantiators;

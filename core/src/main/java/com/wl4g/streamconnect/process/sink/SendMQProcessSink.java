@@ -15,25 +15,23 @@
  *
  */
 
-package com.wl4g.streamconnect.sink;
+package com.wl4g.streamconnect.process.sink;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.Serializable;
 import java.util.concurrent.Future;
 
 /**
- * The {@link NoOpProcessSink}
+ * The {@link SendMQProcessSink}
  *
  * @author James Wong
  * @since v1.0
  **/
-@Slf4j
-public class NoOpProcessSink extends AbstractProcessSink {
+public class SendMQProcessSink extends AbstractProcessSink {
 
-    public static final String TYPE_NAME = "NOOP_SINK";
+    public static final String TYPE_NAME = "SEND_MQ_SINK";
 
     @Override
     public String getType() {
@@ -44,9 +42,7 @@ public class NoOpProcessSink extends AbstractProcessSink {
     public Future<? extends Serializable> doSink(String subscriberId,
                                                  boolean sequence,
                                                  ConsumerRecord<String, ObjectNode> record) {
-        log.info("----- This is a default printer sink, and you should customize " +
-                "the implementation of sink logic ! -----\nsubscriberId: {}\nrecord: {}", subscriberId, record);
-        return super.doSink(subscriberId, sequence, record);
+        throw new UnsupportedOperationException();
     }
 
 }

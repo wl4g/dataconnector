@@ -28,7 +28,7 @@ import com.wl4g.streamconnect.exception.GiveUpRetryExecutionException;
 import com.wl4g.streamconnect.meter.StreamConnectMeter.MetricsName;
 import com.wl4g.streamconnect.meter.StreamConnectMeterEventHandler.CountMeterEvent;
 import com.wl4g.streamconnect.meter.StreamConnectMeterEventHandler.TimingMeterEvent;
-import com.wl4g.streamconnect.sink.IProcessSink;
+import com.wl4g.streamconnect.process.sink.IProcessSink;
 import com.wl4g.streamconnect.util.KafkaUtil;
 import lombok.AllArgsConstructor;
 import lombok.Getter;

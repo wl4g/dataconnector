@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.process.map;
 
 import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;
 import lombok.Getter;

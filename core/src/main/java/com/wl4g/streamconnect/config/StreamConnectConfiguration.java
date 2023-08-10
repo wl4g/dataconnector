@@ -25,9 +25,9 @@ import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoo
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.IShardingStrategy;
 import com.wl4g.streamconnect.coordinator.strategy.ShardingStrategyFactory;
-import com.wl4g.streamconnect.filter.IProcessFilter;
-import com.wl4g.streamconnect.map.IProcessMapper;
-import com.wl4g.streamconnect.sink.IProcessSink;
+import com.wl4g.streamconnect.process.filter.IProcessFilter;
+import com.wl4g.streamconnect.process.map.IProcessMapper;
+import com.wl4g.streamconnect.process.sink.IProcessSink;
 import com.wl4g.streamconnect.source.ISourceProvider;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -203,16 +203,9 @@ public class StreamConnectConfiguration {
         coordinator.setShardingStrategy(ShardingStrategyFactory.getStrategy(coordinatorProps
                 .getShardingStrategy()));
 
-        // Parse to coordinator bootstrap servers.
-        coordinator.setBootstrapServers(coordinator.getBootstrapServers());
-
-        // Parse to coordinator config.
-        final KafkaCoordinatorBusConfig configConfig = coordinatorProps.getConfigConfig();
-        coordinator.setBusConfig(configConfig);
-
-        // Parse to coordinator discovery.
-        final KafkaCoordinatorDiscoveryConfig discoveryConfig = coordinatorProps.getDiscoveryConfig();
-        coordinator.setDiscoveryConfig(discoveryConfig);
+        coordinator.setBootstrapServers(coordinatorProps.getBootstrapServers());
+        coordinator.setBusConfig(coordinatorProps.getConfigConfig());
+        coordinator.setDiscoveryConfig(coordinatorProps.getDiscoveryConfig());
 
         return coordinator;
     }

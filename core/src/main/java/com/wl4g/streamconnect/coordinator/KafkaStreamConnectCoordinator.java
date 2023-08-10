@@ -134,7 +134,7 @@ public class KafkaStreamConnectCoordinator extends AbstractStreamConnectCoordina
     }
 
     private String generateBroadcastGroupId() {
-        return String.format("subscribe-coordinator-config-%s-%s",
+        return String.format(KafkaCoordinatorBusConfig.DEFAULT_CONFIG_PRODUCER_GROUP_ID_TPL,
                 SystemUtils2.getHostName(), environment.getRequiredProperty("server.port"));
     }
 
@@ -180,6 +180,7 @@ public class KafkaStreamConnectCoordinator extends AbstractStreamConnectCoordina
     public static class KafkaCoordinatorBusConfig {
 
         public static final String DEFAULT_CONFIG_PRODUCER_TX_ID = "subscribe_coordinator_config_tx_id";
+        public static final String DEFAULT_CONFIG_PRODUCER_GROUP_ID_TPL = "subscribe-coordinator-config-%s-%s";
 
         private @Builder.Default String topic = "subscribe_coordinator_config_topic";
 

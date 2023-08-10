@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.filter;
+package com.wl4g.streamconnect.process.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;

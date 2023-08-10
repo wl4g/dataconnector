@@ -195,7 +195,7 @@ stream-connect:
   coordinator:
     shardingStrategy: AVG_SHARDING
     bootstrapServers: ${IT_KAFKA_SERVERS_01:localhost:9092}
-    configConfig:
+    busConfig:
       topic: "test_streamconnect_coordinator_config_topic"
       producerProps: {}
       consumerProps: {}
@@ -209,12 +209,6 @@ stream-connect:
       enable: true # By default: true
       checkpoint: checkpoint_1
       source: subscribeSource_1
-      # TODO support custom multiple stages processing
-      #processes:
-      #  - subscribeFilter_1
-      #  - subscribeMapper_1
-      ##  - subscribeFilter_2
-      ##  - subscribeMapper_2
       filters:
         - subscribeFilter_1
       mappers:

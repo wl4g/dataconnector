@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.filter;
+package com.wl4g.streamconnect.process.filter;
 
 import com.wl4g.streamconnect.bean.SubscriberInfo;
 import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;

@@ -17,9 +17,9 @@
 package com.wl4g.streamconnect.config;
 
 import com.wl4g.streamconnect.checkpoint.IProcessCheckpoint;
-import com.wl4g.streamconnect.filter.IProcessFilter;
-import com.wl4g.streamconnect.map.IProcessMapper;
-import com.wl4g.streamconnect.sink.IProcessSink;
+import com.wl4g.streamconnect.process.filter.IProcessFilter;
+import com.wl4g.streamconnect.process.map.IProcessMapper;
+import com.wl4g.streamconnect.process.sink.IProcessSink;
 import com.wl4g.streamconnect.source.ISourceProvider;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.constructor.BaseConstructor;

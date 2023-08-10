@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.sink;
+package com.wl4g.streamconnect.process.sink;
 
 import com.wl4g.streamconnect.config.StreamConnectProperties.SinkProperties;
 import com.wl4g.streamconnect.framework.NamedStreamConnectSpi;

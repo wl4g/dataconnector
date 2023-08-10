@@ -24,10 +24,9 @@ import com.wl4g.streamconnect.checkpoint.IProcessCheckpoint;
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorBusConfig;
 import com.wl4g.streamconnect.coordinator.KafkaStreamConnectCoordinator.KafkaCoordinatorDiscoveryConfig;
 import com.wl4g.streamconnect.coordinator.strategy.AverageShardingStrategy;
-import com.wl4g.streamconnect.filter.IProcessFilter;
-import com.wl4g.streamconnect.map.IProcessMapper;
-import com.wl4g.streamconnect.sink.IProcessSink;
-import com.wl4g.streamconnect.sink.NoOpProcessSink;
+import com.wl4g.streamconnect.process.filter.IProcessFilter;
+import com.wl4g.streamconnect.process.map.IProcessMapper;
+import com.wl4g.streamconnect.process.sink.IProcessSink;
 import com.wl4g.streamconnect.source.ISourceProvider;
 import lombok.Builder;
 import lombok.Getter;
@@ -143,11 +142,13 @@ public class StreamConnectProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static class SourceProperties extends BaseConsumerProperties {
+        private String name;
         private String topicPattern;
 
         @Override
         public void validate() {
             super.validate();
+            Assert2.hasTextOf(name, "name");
             Assert2.hasTextOf(topicPattern, "topicPattern");
             Assert2.notNullOf(getConsumerProps().get(ConsumerConfig.GROUP_ID_CONFIG), "group.id");
         }
@@ -173,7 +174,6 @@ public class StreamConnectProperties implements InitializingBean {
     @ToString
     @NoArgsConstructor
     public static abstract class BaseConsumerProperties {
-        private String name;
         // By force: min(concurrency, topicPartitions.length)
         // see:org.springframework.kafka.listener.ConcurrentMessageListenerContainer#doStart()
         // But it's a pity that spring doesn't get it dynamically from broker.
@@ -203,7 +203,6 @@ public class StreamConnectProperties implements InitializingBean {
         };
 
         public void validate() {
-            Assert2.hasTextOf(name, "name");
             Assert2.isTrueOf(parallelism > 0 && parallelism < 100, "parallelism > 0 && parallelism < 100");
             Assert2.notNullOf(consumerProps.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "bootstrap.servers");
         }

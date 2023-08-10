@@ -15,40 +15,26 @@
  *
  */
 
-package com.wl4g.streamconnect.map;
+package com.wl4g.streamconnect.process.filter;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wl4g.streamconnect.bean.SubscriberInfo;
-import lombok.Getter;
+import com.wl4g.streamconnect.framework.IStreamConnectSpi;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import javax.annotation.concurrent.NotThreadSafe;
-import java.util.Objects;
+import java.util.Collection;
 
 /**
- * The {@link ProcessMapperChain}
+ * The custom record processing(filtering).
  *
  * @author James Wong
  * @since v1.0
  **/
-@Getter
-@NotThreadSafe
-public class ProcessMapperChain {
+public interface IProcessFilter extends IStreamConnectSpi {
 
-    private final IProcessMapper[] mappers;
-    private int index = 0;
+    void updateMergeSubscribeConditions(Collection<SubscriberInfo> subscribers);
 
-    public ProcessMapperChain(IProcessMapper[] mappers) {
-        this.mappers = mappers;
-    }
-
-    public ConsumerRecord<String, ObjectNode> doMap(SubscriberInfo subscriber,
-                                                    ConsumerRecord<String, ObjectNode> record) {
-        ConsumerRecord<String, ObjectNode> mapped = record;
-        if (Objects.nonNull(mappers) && index < mappers.length) {
-            mapped = mappers[index++].doMap(this, subscriber, record);
-        }
-        return mapped;
-    }
+    boolean doFilter(SubscriberInfo subscriber,
+                     ConsumerRecord<String, ObjectNode> record);
 
 }

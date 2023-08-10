@@ -24,12 +24,11 @@ import com.wl4g.streamconnect.config.KafkaConsumerBuilder;
 import com.wl4g.streamconnect.config.KafkaProducerBuilder;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration;
 import com.wl4g.streamconnect.config.StreamConnectConfiguration.PipelineConfig;
-import com.wl4g.streamconnect.config.StreamConnectProperties.BaseConsumerProperties;
 import com.wl4g.streamconnect.config.StreamConnectProperties.SinkProperties;
 import com.wl4g.streamconnect.config.StreamConnectProperties.SourceProperties;
 import com.wl4g.streamconnect.coordinator.CachingSubscriberRegistry;
 import com.wl4g.streamconnect.custom.StreamConnectEngineCustomizer;
-import com.wl4g.streamconnect.sink.IProcessSink;
+import com.wl4g.streamconnect.process.sink.IProcessSink;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -122,7 +121,6 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
             log.warn("Already started, ignore again.");
             return;
         }
-
         // TODO
         // topicManager.initPipelinesTopicIfNecessary(15_000);
         registerAllPipelines();
@@ -186,10 +184,10 @@ public class StreamConnectEngineScheduler implements ApplicationRunner, Closeabl
             final Map<String, SubscribeContainerBootstrap<ProcessBatchMessageDispatcher>> filterBootstraps =
                     CollectionUtils2.safeList(pipelineConfig.getSourceProvider().loadSources(pipelineName))
                             .stream()
-                            .map(SourceProperties::optimizeProperties)
+                            .map(s -> (SourceProperties) s.optimizeProperties())
                             .collect(Collectors.toMap(
-                                    BaseConsumerProperties::getName,
-                                    source -> registerPipelineFilter(pipelineConfig, (SourceProperties) source)));
+                                    SourceProperties::getName,
+                                    source -> registerPipelineFilter(pipelineConfig, source)));
 
             Map<String, SubscribeContainerBootstrap<SinkBatchMessageDispatcher>> sinkBootstraps = emptyMap();
             // Register sink config If necessary. (per subscriber a sink dispatcher instance)
