@@ -11,7 +11,7 @@
 version: "3"
 
 networks:
-  subscriber_net:
+  streamconnect_net:
     driver: bridge
 
 services:
@@ -24,13 +24,13 @@ services:
       - ZOO_PORT_NUMBER=12181
     restart: unless-stopped
     networks:
-      - subscriber_net
+      - streamconnect_net
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
       #- zookeeper01_data:/opt/bitnami/zookeeper/data:rw
     ports:
-      - 12181:12181
+      - "12181:12181"
 
   zookeeper02:
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_zookeeper:3.6.2 # docker.io/bitnami/zookeeper:3.6.2
@@ -41,13 +41,13 @@ services:
       - ZOO_PORT_NUMBER=22181
     restart: unless-stopped
     networks:
-      - subscriber_net
+      - streamconnect_net
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
       #- zookeeper02_data:/opt/bitnami/zookeeper/data:rw
     ports:
-      - 22181:22181
+      - "22181:22181"
 
   kafka01: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
@@ -60,7 +60,7 @@ services:
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper01:12181
     restart: unless-stopped
     networks:
-      - subscriber_net
+      - streamconnect_net
     depends_on:
       - zookeeper01
     ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
@@ -70,7 +70,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       #- kafka01_data:/bitnami/kafka/data:rw
     ports:
-      - 19092:19092
+      - "19092:19092"
 
   kafka02: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
@@ -83,7 +83,7 @@ services:
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper02:22181
     restart: unless-stopped
     networks:
-      - subscriber_net
+      - streamconnect_net
     depends_on:
       - zookeeper02
     ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
@@ -93,26 +93,28 @@ services:
       - /etc/localtime:/etc/localtime:ro
       #- kafka02_data:/bitnami/kafka/data:rw
     ports:
-      - 29092:29092
+      - "29092:29092"
 
   ## see:https://github.com/provectus/kafka-ui/blob/v0.7.1/documentation/compose/kafka-ui.yaml
-  kafka_ui:
+  kafka-ui:
     image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/provectuslabs_kafka-ui:v0.7.1 # docker.io/provectuslabs/kafka-ui:v0.7.1
-    container_name: kafka_ui
-    hostname: kafka_ui
+    container_name: kafka-ui
+    hostname: kafka-ui
     environment:
       - JAVA_OPTS=-Djava.net.preferIPv4Stack=true -Xmx1G
+      - DYNAMIC_CONFIG_ENABLED=true
       - KAFKA_CLUSTERS_0_NAME=dev-kafka01
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka01:19092
-      - KAFKA_CLUSTERS_1_NAME=dev-kafka02
-      - KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS=kafka02:29092
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://schema-registry01:18085
       #- KAFKA_CLUSTERS_0_METRICS_PORT=9997
-      #- KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://schemaregistry0:8085
       #- KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=first
       #- KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=http://kafka-connect0:8083
+      - KAFKA_CLUSTERS_1_NAME=dev-kafka02
+      - KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS=kafka02:29092
+      - KAFKA_CLUSTERS_1_SCHEMAREGISTRY=http://schema-registry02:28085
     restart: unless-stopped
     networks:
-      - subscriber_net
+      - streamconnect_net
     depends_on:
       - zookeeper01
       - zookeeper02
@@ -122,15 +124,57 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - 38080:8080
+      - "38080:8080"
 
-#  kafka-subscriber:
-#    image: docker.io/wl4g/kafka-subscriber:1.0.0
-#    container_name: kafka-subscriber
-#    hostname: kafka-subscriber
+  schema-registry01:
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/confluentinc_cp-schema-registry:7.2.1 # docker.io/confluentinc/cp-schema-registry:7.2.1
+    container_name: schema-registry01
+    hostname: schema-registry01
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka01:19092
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry01
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:18085
+      SCHEMA_REGISTRY_SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL: "http"
+      SCHEMA_REGISTRY_LOG4J_ROOT_LOGLEVEL: INFO
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+    restart: unless-stopped
+    networks:
+      - streamconnect_net
+    depends_on:
+      - kafka01
+    ports:
+      - "18085:18085"
+
+  schema-registry02:
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/confluentinc_cp-schema-registry:7.2.1 # docker.io/confluentinc/cp-schema-registry:7.2.1
+    container_name: schema-registry02
+    hostname: schema-registry02
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka02:29092
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry02
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:28085
+      SCHEMA_REGISTRY_SCHEMA_REGISTRY_INTER_INSTANCE_PROTOCOL: "http"
+      SCHEMA_REGISTRY_LOG4J_ROOT_LOGLEVEL: INFO
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+    restart: unless-stopped
+    networks:
+      - streamconnect_net
+    depends_on:
+      - kafka02
+    ports:
+      - "28085:28085"
+
+#  stream-connect:
+#    image: docker.io/wl4g/stream-connect:1.0.0
+#    container_name: stream-connect
+#    hostname: stream-connect
+#    environment:
+#      SERVER_PORT: 8000
 #    restart: unless-stopped
 #    networks:
-#      - subscriber_net
+#      - streamconnect_net
 #    depends_on:
 #      - zookeeper
 #      - kafka
@@ -138,7 +182,7 @@ services:
 #      - /etc/timezone:/etc/timezone:ro
 #      - /etc/localtime:/etc/localtime:ro
 #    ports:
-#      - 8000:8000
+#      - "8000:8000"
 
 volumes:
   zookeeper01_data:

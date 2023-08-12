@@ -1,33 +1,14 @@
-# kafka-subscriber
+# stream-connect
 
-A generic kafka expose subscription framework or server, supports custom filter(e.g aviator expr), sink and record key-level sequence handling, subscriber interrupted and resumed strategy, and data is not lost.
+> The streaming connect framework and server, supports cross tenant custom filter(e.g aviator expr), mapper, sinker open subscribe, data authority and record key-level sequence handling, subscribe interrupted and resumed checkpoint strategy, ensure data is not lost.
 
-## Developer guide
+- [Developer guide](docs/md/developer_guide.md)
+- [Deploy guide](docs/md/deploy_guide.md)
 
-- Preconditions
+## Architectures
 
-```bash
-git clone git@github.com/wl4g/kafka-subscriber.git
-cd kafka-subscriber/tools/deploy/compose
-
-docker-compose up -d
-```
-
-- Accessing kafka-ui: http://localhost:38080/
-
-- Add kafka to local hosts
-
-```bash
-cat << EOF >> /etc/hosts
-127.0.0.1   zookeeper01 kafka01
-127.0.0.1   zookeeper02 kafka02
-EOF
-```
-
-- Start with IntelliJ IDEA
-
-TODO
+- Global architectures ![Global architectures](docs/diagram/global_architecture.png)
 
 ## Stargazers over time
 
-[![Stargazers over time](https://starchart.cc/wl4g/kafka-subscriber.svg)](https://starchart.cc/wl4g/kafka-subscriber)
+[![Stargazers over time](https://starchart.cc/wl4g/stream-connect.svg)](https://starchart.cc/wl4g/stream-connect)

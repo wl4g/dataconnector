@@ -1,0 +1,14 @@
+plugins {
+    id 'java'
+    id 'java-library'
+}
+
+description = "Stream Connect Extension for Checkpoint MinIO"
+
+dependencies {
+    api project(":core")
+    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+    }
+    testImplementation("junit:junit")
+}

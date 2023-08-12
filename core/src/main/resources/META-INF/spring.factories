@@ -14,4 +14,7 @@
 #  limitations under the License.
 #
 org.springframework.boot.env.PropertySourceLoader=\
-com.wl4g.kafkasubscriber.spring.CustomYamlPropertySourceLoader
+com.wl4g.streamconnect.spring.CustomYamlPropertySourceLoader
+
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.wl4g.streamconnect.config.StreamConnectAutoConfiguration
