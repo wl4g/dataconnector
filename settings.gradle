@@ -1,9 +1,11 @@
-rootProject.name = 'kafka-subscriber'
-
+rootProject.name = "${projectName}"
 include 'core'
-include 'server'
-include 'sharding-elasticjob'
-
-project(':core').projectDir = new File(rootDir, 'core')
-project(':server').projectDir = new File(rootDir, 'server')
-project(':sharding-elasticjob').projectDir = new File(rootDir, 'sharding-elasticjob')
+include 'examples'
+include 'ext-coordinator-kafka'
+include 'ext-checkpoint-kafka'
+include 'ext-checkpoint-minio'
+include 'ext-connect-kafka'
+include 'ext-connect-rocketmq'
+//include 'ext-connect-rabbitmq'
+include 'ext-connect-jdbc'
+include 'ext-connect-tdengine'

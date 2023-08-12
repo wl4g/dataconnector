@@ -1,0 +1,16 @@
+plugins {
+    id 'java'
+    id 'java-library'
+}
+
+description = "Stream Connect Extension for Connect JDBC"
+
+dependencies {
+    api project(":core")
+    api 'org.apache.shardingsphere.elasticjob:elasticjob-lite-core:3.0.1'
+    api 'org.springframework:spring-jdbc'
+    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+    }
+    testImplementation("junit:junit")
+}

@@ -1,0 +1,17 @@
+plugins {
+    id 'java'
+    id 'java-library'
+}
+
+description = "Stream Connect Extension for Connect Kafka"
+
+dependencies {
+    api project(":core")
+    api "org.springframework.kafka:spring-kafka"
+    api "io.confluent:kafka-avro-serializer:7.4.0"
+    api "io.confluent:kafka-schema-registry-client:7.4.0"
+    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+        exclude group: "org.junit.vintage", module: "junit-vintage-engine"
+    }
+    testImplementation("junit:junit")
+}

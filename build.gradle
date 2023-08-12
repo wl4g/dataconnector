@@ -1,25 +1,119 @@
+import org.ajoberstar.grgit.Grgit
+import org.gradle.api.JavaVersion
+import java.nio.charset.StandardCharsets
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    apply from: "$rootDir/gradle/dependencies.gradle"
+
+    dependencies {
+        // For Apache Rat plugin to ignore non-Git files
+        classpath "org.ajoberstar.grgit:grgit-core:$versions.grgit"
+        classpath "com.github.dawnwords:jacoco-badge-gradle-plugin:0.2.4"
+    }
+}
+
 plugins {
     id 'java'
-    //id 'org.springframework.boot' version '3.1.1'
-    //id 'io.spring.dependency-management' version '1.1.0'
-    id 'org.springframework.boot' version '2.7.13'
-    id 'io.spring.dependency-management' version '1.0.15.RELEASE'
+    id 'com.github.ben-manes.versions' version '0.46.0'
+    id 'idea'
+    id 'jacoco'
+    id 'java-library'
+    id 'org.owasp.dependencycheck' version '8.1.2'
+    id 'org.nosphere.apache.rat' version "0.8.0"
+    id "io.swagger.core.v3.swagger-gradle-plugin" version "2.2.8"
+
+    id "com.github.spotbugs" version '5.0.13' apply false
+    id 'org.gradle.test-retry' version '1.5.2' apply false
+    id 'org.scoverage' version '7.0.1' apply false
+    id 'com.github.johnrengelman.shadow' version '8.1.0' apply false
+    // 6.14.1 and newer require Java 11 at compile time, so we can't upgrade until AK 4.0
+    id 'com.diffplug.spotless' version '6.14.0' apply false
+
+    id 'org.springframework.boot' version '2.7.13' // 3.1.1
+    id 'io.spring.dependency-management' version '1.0.15.RELEASE' // 1.1.0
 }
 
 group = 'com.wl4g'
 version = '1.0.0'
 
-java {
-    sourceCompatibility = '1.8'
+ext {
+    gradleVersion = versions.gradle
+    minJavaVersion = "8" // 11,17
+    buildVersionFileName = "java-playground-version.properties"
+
+    defaultMaxHeapSize = "1g"
+    defaultJvmArgs = ["-Xss4m", "-XX:+UseParallelGC"]
+
+    // "JEP 403: Strongly Encapsulate JDK Internals" causes some tests to fail when they try
+    // to access internals (often via mocking libraries). We use `--add-opens` as a workaround
+    // for now and we'll fix it properly (where possible) via KAFKA-13275.
+    if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_16))
+        defaultJvmArgs.addAll(
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                "--add-opens=java.base/java.nio=ALL-UNNAMED",
+                "--add-opens=java.base/java.nio.file=ALL-UNNAMED",
+                "--add-opens=java.base/java.util=ALL-UNNAMED",
+                "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+                "--add-opens=java.base/java.util.regex=ALL-UNNAMED",
+                "--add-opens=java.base/java.util.stream=ALL-UNNAMED",
+                "--add-opens=java.base/java.text=ALL-UNNAMED",
+                "--add-opens=java.base/java.time=ALL-UNNAMED",
+                "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+        )
+
+    maxTestForks = project.hasProperty('maxParallelForks') ? maxParallelForks.toInteger() : Runtime.runtime.availableProcessors()
+    maxScalacThreads = project.hasProperty('maxScalacThreads') ? maxScalacThreads.toInteger() :
+            Math.min(Runtime.runtime.availableProcessors(), 8)
+    userIgnoreFailures = project.hasProperty('ignoreFailures') ? ignoreFailures : false
+
+    userMaxTestRetries = project.hasProperty('maxTestRetries') ? maxTestRetries.toInteger() : 0
+    userMaxTestRetryFailures = project.hasProperty('maxTestRetryFailures') ? maxTestRetryFailures.toInteger() : 0
+
+    skipSigning = project.hasProperty('skipSigning') && skipSigning.toBoolean()
+    shouldSign = !skipSigning && !version.endsWith("SNAPSHOT")
+
+    mavenUrl = project.hasProperty('mavenUrl') ? project.mavenUrl : ''
+    mavenUsername = project.hasProperty('mavenUsername') ? project.mavenUsername : ''
+    mavenPassword = project.hasProperty('mavenPassword') ? project.mavenPassword : ''
+
+    userShowStandardStreams = project.hasProperty("showStandardStreams") ? showStandardStreams : null
+
+    userTestLoggingEvents = project.hasProperty("testLoggingEvents") ? Arrays.asList(testLoggingEvents.split(",")) : null
+
+    userEnableCheckstyle = project.hasProperty("enableCheckstyle") ? enableCheckstyle : false
+    userEnableSpotbugs = project.hasProperty("enableSpotbugs") ? enableSpotbugs : true
+    userEnableTestCoverage = project.hasProperty("enableTestCoverage") ? enableTestCoverage : true
+
+    userKeepAliveModeString = project.hasProperty("keepAliveMode") ? keepAliveMode : "daemon"
+    userKeepAliveMode = KeepAliveMode.values().find(m -> m.name().toLowerCase().equals(userKeepAliveModeString))
+    if (userKeepAliveMode == null) {
+        def keepAliveValues = KeepAliveMode.values().collect(m -> m.name.toLowerCase())
+        throw new GradleException("Unexpected value for keepAliveMode property. Expected one of $keepAliveValues, but received: $userKeepAliveModeString")
+    }
+
+    // See README.md for details on this option and the reasoning for the default
+    userScalaOptimizerMode = project.hasProperty("scalaOptimizerMode") ? scalaOptimizerMode : "inline-kafka"
+    def scalaOptimizerValues = ["none", "method", "inline-kafka", "inline-scala"]
+    if (!scalaOptimizerValues.contains(userScalaOptimizerMode))
+        throw new GradleException("Unexpected value for scalaOptimizerMode property. Expected one of $scalaOptimizerValues, but received: $userScalaOptimizerMode")
+
+    generatedDocsDir = new File("${project.rootDir}/docs/generated")
+
+    commitId = determineCommitId()
 }
 
 allprojects {
-    //sourceCompatibility = '17'
-    //targetCompatibility = '17'
-    sourceCompatibility = '1.8'
-    targetCompatibility = '1.8'
+    apply plugin: 'com.github.dawnwords.jacoco.badge'
+
+    sourceCompatibility = minJavaVersion
+    targetCompatibility = minJavaVersion
+
     repositories {
-        maven { url 'https://maven.aliyun.com/repository/public/' }
+        //maven { url 'https://maven.aliyun.com/repository/public/' }
         maven { url 'https://packages.confluent.io/maven' }
         mavenLocal()
         mavenCentral()
@@ -44,44 +138,468 @@ allprojects {
         //    }
         //}
     }
+
+    //apply plugin: 'idea'
+    //apply plugin: 'org.owasp.dependencycheck'
+    //apply plugin: 'com.github.ben-manes.versions'
 }
 
-subprojects {
-    apply plugin: 'java'
-    apply plugin: "checkstyle"
-    //apply plugin: 'com.github.dawnwords.jacoco.badge'
-
-    //group = packageJson.group
-    //version = packageJson.version
-    //sourceCompatibility = '17'
-
-    checkstyle {
-        toolVersion = "8.26"
-        configFile file("${rootProject.rootDir}/tools/build/checkstyle/checkstyle.xml")
-        maxWarnings = 0
+def determineCommitId() {
+    def takeFromHash = 16
+    if (project.hasProperty('commitId')) {
+        commitId.take(takeFromHash)
+    } else if (file("$rootDir/.git/HEAD").exists()) {
+        def headRef = file("$rootDir/.git/HEAD").text
+        if (headRef.contains('ref: ')) {
+            headRef = headRef.replaceAll('ref: ', '').trim()
+            if (file("$rootDir/.git/$headRef").exists()) {
+                file("$rootDir/.git/$headRef").text.trim().take(takeFromHash)
+            }
+        } else {
+            headRef.trim().take(takeFromHash)
+        }
+    } else {
+        "unknown"
     }
+}
+
+apply from: file('wrapper.gradle')
+apply plugin: 'com.github.dawnwords.jacoco.badge'
+
+if (file('.git').exists()) {
+    rat {
+        verbose.set(true)
+        reportDir.set(project.file('build/rat'))
+        stylesheet.set(file('gradle/resources/rat-output-to-html.xsl'))
+
+        // Exclude everything under the directory that git should be ignoring via .gitignore or that isn't checked in. These
+        // restrict us only to files that are checked in or are staged.
+        def repo = Grgit.open(currentDir: project.getRootDir())
+        excludes = new ArrayList<String>(repo.clean(ignore: false, directories: true, dryRun: true))
+        // And some of the files that we have checked in should also be excluded from this check
+        excludes.addAll([
+                '**/.git/**',
+                '**/build/**',
+                'CONTRIBUTING.md',
+                'PULL_REQUEST_TEMPLATE.md',
+                'gradlew',
+                'gradlew.bat',
+                'gradle/wrapper/gradle-wrapper.properties',
+                '**/README.md',
+                '**/id_rsa',
+                '**/id_rsa.pub',
+                'licenses/*',
+                '**/generated/**'
+        ])
+    }
+} else {
+    rat.enabled = false
+}
+println("Starting build with version $version (commit id ${commitId == null ? "null" : commitId.take(8)}) using Gradle $gradleVersion, Java ${JavaVersion.current()} and Scala ${versions.scala}")
+println("Build properties: maxParallelForks=$maxTestForks, maxScalacThreads=$maxScalacThreads, maxTestRetries=$userMaxTestRetries")
+
+subprojects {
+    // enable running :dependencies task recursively on all subprojects
+    // eg: ./gradlew allDeps
+    task allDeps(type: DependencyReportTask) {}
+    // enable running :dependencyInsight task recursively on all subprojects
+    // eg: ./gradlew allDepInsight --configuration runtime --dependency com.fasterxml.jackson.core:jackson-databind
+    task allDepInsight(type: DependencyInsightReportTask) { showingAllVariants = false } doLast {}
+
+    apply plugin: 'java-library'
+    //apply plugin: 'com.palantir.git-version'
+    apply plugin: 'io.spring.dependency-management'
+    apply plugin: 'org.gradle.test-retry'
+    apply plugin: 'maven-publish'
+    apply plugin: 'signing'
 
     dependencyManagement {
         imports {
-            //mavenBom 'org.springframework.boot:spring-boot-dependencies:3.1.1'
-            mavenBom 'org.springframework.boot:spring-boot-dependencies:2.7.13'
+            mavenBom 'org.springframework.boot:spring-boot-dependencies:2.7.13' // 3.1.1
         }
     }
 
     dependencies {
-        //implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:3.1.1')
-        implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:2.7.13')
+        implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:2.7.13') // 3.1.1
+
+        testImplementation "org.springframework.boot:spring-boot-starter-test"
+        testCompileOnly 'org.projectlombok:lombok:1.18.24'
+        testAnnotationProcessor 'org.projectlombok:lombok:1.18.24'
+        testImplementation("junit:junit:4.13.2")
+        testImplementation "org.junit.jupiter:junit-jupiter:5.8.1"
+        testImplementation "org.junit.jupiter:junit-jupiter-api:5.8.1"
+        testImplementation "org.junit.jupiter:junit-jupiter-engine:5.8.1"
+        testImplementation "org.junit.vintage:junit-vintage-engine:5.8.1"
+        testImplementation "org.testcontainers:junit-jupiter:1.18.3"
+        testImplementation 'org.testcontainers:kafka:1.18.3'
+        testImplementation "org.testcontainers:testcontainers:1.18.3"
+        testImplementation 'com.github.docker-java:docker-java-core:3.2.11'
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+        options.compilerArgs << "-Xlint:all"
+        // temporary exclusions until all the warnings are fixed
+        options.compilerArgs << "-Xlint:-deprecation"
+        options.compilerArgs << "-Xlint:-rawtypes"
+        options.compilerArgs << "-Xlint:-serial"
+        options.compilerArgs << "-Xlint:-try"
+        options.compilerArgs << "-Xlint:-cast"
+        //options.compilerArgs << "-Werror"
+        // --release is the recommended way to select the target release, but it's only supported in Java 9 so we also
+        // set --source and --target via `sourceCompatibility` and `targetCompatibility`. If/when Gradle supports `--release`
+        // natively (https://github.com/gradle/gradle/issues/2510), we should switch to that.
+        if (JavaVersion.current().isJava9Compatible())
+            options.compilerArgs << "--release" << minJavaVersion
+    }
+
+    // We should only set this if Java version is < 9 (--release is recommended for >= 9), but the Scala plugin for IntelliJ sets
+    // `-target` incorrectly if this is unset
+    sourceCompatibility = minJavaVersion
+    targetCompatibility = minJavaVersion
+
+    //publishing {
+    //    repositories {
+    //        // To test locally, invoke gradlew with `-PmavenUrl=file:///some/local/path`
+    //        maven {
+    //            url = mavenUrl
+    //            credentials {
+    //                username = mavenUsername
+    //                password = mavenPassword
+    //            }
+    //        }
+    //    }
+    //    publications {
+    //        mavenJava(MavenPublication) {
+    //            from components.java
+    //            afterEvaluate {
+    //                ["srcJar", "javadocJar", "scaladocJar", "testJar", "testSrcJar"].forEach { taskName ->
+    //                    def task = tasks.findByName(taskName)
+    //                    if (task != null)
+    //                        artifact task
+    //                }
+    //                artifactId = archivesBaseName
+    //                pom {
+    //                    name = 'Apache Kafka'
+    //                    url = 'https://kafka.apache.org'
+    //                    licenses {
+    //                        license {
+    //                            name = 'The Apache License, Version 2.0'
+    //                            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+    //                            distribution = 'repo'
+    //                        }
+    //                    }
+    //                }
+    //            }
+    //        }
+    //    }
+    //}
+
+    if (shouldSign) {
+        //signing {
+        //    sign publishing.publications.mavenJava
+        //}
+    }
+
+    def shouldUseJUnit5 = true
+    def testLoggingEvents = ["passed", "skipped", "failed"]
+    def testShowStandardStreams = true
+    def testExceptionFormat = 'full'
+    // Gradle built-in logging only supports sending test output to stdout, which generates a lot
+    // of noise, especially for passing tests. We really only want output for failed tests. This
+    // hooks into the output and logs it (so we don't have to buffer it all in memory) and only
+    // saves the output for failing tests. Directory and filenames are such that you can, e.g.,
+    // create a Jenkins rule to collect failed test output.
+    def logTestStdout = {
+        def testId = { TestDescriptor descriptor ->
+            "${descriptor.className}.${descriptor.name}".toString()
+        }
+        def logFiles = new HashMap<String, File>()
+        def logStreams = new HashMap<String, FileOutputStream>()
+        beforeTest { TestDescriptor td ->
+            def tid = testId(td)
+            // truncate the file name if it's too long
+            def logFile = new File(
+                    "${projectDir}/build/reports/testOutput/${tid.substring(0, Math.min(tid.size(), 240))}.test.stdout"
+            )
+            logFile.parentFile.mkdirs()
+            logFiles.put(tid, logFile)
+            logStreams.put(tid, new FileOutputStream(logFile))
+        }
+        onOutput { TestDescriptor td, TestOutputEvent toe ->
+            def tid = testId(td)
+            // Some output can happen outside the context of a specific test (e.g. at the class level)
+            // and beforeTest/afterTest seems to not be invoked for these cases (and similarly, there's
+            // a TestDescriptor hierarchy that includes the thread executing the test, Gradle tasks,
+            // etc). We see some of these in practice and it seems like something buggy in the Gradle
+            // test runner since we see it *before* any tests and it is frequently not related to any
+            // code in the test (best guess is that it is tail output from last test). We won't have
+            // an output file for these, so simply ignore them. If they become critical for debugging,
+            // they can be seen with showStandardStreams.
+            if (td.name == td.className || td.className == null) {
+                // silently ignore output unrelated to specific test methods
+                return
+            } else if (logStreams.get(tid) == null) {
+                println "WARNING: unexpectedly got output for a test [${tid}]" +
+                        " that we didn't previously see in the beforeTest hook." +
+                        " Message for debugging: [" + toe.message + "]."
+                return
+            }
+            try {
+                logStreams.get(tid).write(toe.message.getBytes(StandardCharsets.UTF_8))
+            } catch (Exception e) {
+                println "ERROR: Failed to write output for test ${tid}"
+                e.printStackTrace()
+            }
+        }
+        afterTest { TestDescriptor td, TestResult tr ->
+            def tid = testId(td)
+            try {
+                logStreams.get(tid).close()
+                if (tr.resultType != TestResult.ResultType.FAILURE) {
+                    logFiles.get(tid).delete()
+                } else {
+                    def file = logFiles.get(tid)
+                    println "${tid} failed, log available in ${file}"
+                }
+            } catch (Exception e) {
+                println "ERROR: Failed to close stdout file for ${tid}"
+                e.printStackTrace()
+            } finally {
+                logFiles.remove(tid)
+                logStreams.remove(tid)
+            }
+        }
+    }
+
+    // The suites are for running sets of tests in IDEs.
+    // Gradle will run each test class, so we exclude the suites to avoid redundantly running the tests twice.
+    def testsToExclude = ['**/*Suite.class']
+
+    test {
+        maxParallelForks = maxTestForks ?: Runtime.runtime.availableProcessors()
+        ignoreFailures = userIgnoreFailures
+        maxHeapSize = defaultMaxHeapSize
+        jvmArgs = defaultJvmArgs
+
+        testLogging {
+            events = userTestLoggingEvents ?: testLoggingEvents
+            showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+            exceptionFormat = testExceptionFormat
+            displayGranularity = 0
+        }
+        logTestStdout.rehydrate(delegate, owner, this)()
+
+        exclude testsToExclude
+        include {
+            '**/*UT.class'
+            '**/*Test.class'
+            '**/*Tests.class'
+        }
+        if (shouldUseJUnit5) {
+            useJUnitPlatform {
+                excludeTags "integration"
+                excludeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+            }
+        } else {
+            useJUnit {
+                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+            }
+        }
+
+        retry {
+            maxRetries = userMaxTestRetries
+            maxFailures = userMaxTestRetryFailures
+        }
+    }
+
+    task integrationTest(type: Test, dependsOn: compileJava) {
+        maxParallelForks = maxTestForks ?: Runtime.runtime.availableProcessors()
+        ignoreFailures = userIgnoreFailures
+        maxHeapSize = defaultMaxHeapSize
+        jvmArgs = defaultJvmArgs
+
+        testLogging {
+            events = userTestLoggingEvents ?: testLoggingEvents
+            showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+            exceptionFormat = testExceptionFormat
+            displayGranularity = 0
+        }
+        logTestStdout.rehydrate(delegate, owner, this)()
+
+        exclude testsToExclude
+        include {
+            '**/integration/*/*IT.class'
+            '**/integration/*/*IntegrationTest.class'
+        }
+        if (shouldUseJUnit5) {
+            useJUnitPlatform {
+                includeTags "integration"
+                includeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                // Both engines are needed to run JUnit 4 tests alongside JUnit 5 tests.
+                // junit-vintage (JUnit 4) can be removed once the JUnit 4 migration is complete.
+                includeEngines "junit-vintage", "junit-jupiter"
+            }
+        } else {
+            useJUnit {
+                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+            }
+        }
+
+        retry {
+            maxRetries = userMaxTestRetries
+            maxFailures = userMaxTestRetryFailures
+        }
+    }
+
+    task unitTest(type: Test, dependsOn: compileJava) {
+        maxParallelForks = maxTestForks ?: Runtime.runtime.availableProcessors()
+        ignoreFailures = userIgnoreFailures
+        maxHeapSize = defaultMaxHeapSize
+        jvmArgs = defaultJvmArgs
+
+        testLogging {
+            events = userTestLoggingEvents ?: testLoggingEvents
+            showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+            exceptionFormat = testExceptionFormat
+            displayGranularity = 0
+        }
+        logTestStdout.rehydrate(delegate, owner, this)()
+
+        exclude testsToExclude
+        include {
+            '**/*UT.class'
+            '**/*Test.class'
+            '**/*Tests.class'
+        }
+        if (shouldUseJUnit5) {
+            useJUnitPlatform {
+                excludeTags "integration"
+                excludeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+            }
+        } else {
+            useJUnit {
+                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+            }
+        }
+
+        retry {
+            maxRetries = userMaxTestRetries
+            maxFailures = userMaxTestRetryFailures
+        }
+    }
+
+    if (userEnableCheckstyle) {
+        apply plugin: 'checkstyle'
+        checkstyle {
+            toolVersion = versions.checkstyle // 8.26,8.36.2
+            configFile file("${rootProject.rootDir}/gradle/checkstyle.xml")
+            maxWarnings = 0
+        }
+        configure(checkstyleMain) {
+            group = 'Verification'
+            description = 'Run checkstyle on all main Java sources'
+        }
+        configure(checkstyleTest) {
+            group = 'Verification'
+            description = 'Run checkstyle on all test Java sources'
+        }
+        tasks.withType(Checkstyle).configureEach {
+            doFirst {
+                System.setProperty('checkstyleHeaderDir', "${rootProject.rootDir}/gradle")
+            }
+        }
+        test.dependsOn('checkstyleMain', 'checkstyleTest')
+    }
+
+    if (userEnableSpotbugs) {
+        apply plugin: "com.github.spotbugs"
+        spotbugs {
+            toolVersion = versions.spotbugs
+            excludeFilter = file("$rootDir/gradle/spotbugs-exclude.xml")
+            ignoreFailures = false
+        }
+        test.dependsOn('spotbugsMain')
+
+        tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+            reports {
+                // Continue supporting `xmlFindBugsReport` for compatibility
+                xml.enabled(project.hasProperty('xmlSpotBugsReport') || project.hasProperty('xmlFindBugsReport'))
+                html.enabled(!project.hasProperty('xmlSpotBugsReport') && !project.hasProperty('xmlFindBugsReport'))
+            }
+            maxHeapSize = defaultMaxHeapSize
+            jvmArgs = defaultJvmArgs
+        }
+    }
+
+    if (userEnableTestCoverage) {
+        apply plugin: "jacoco"
+        jacoco {
+            toolVersion = versions.jacoco
+        }
+
+        // NOTE: Jacoco Gradle plugin does not support "offline instrumentation" this means that classes mocked by PowerMock
+        // may report 0 coverage, since the source was modified after initial instrumentation.
+        // See https://github.com/jacoco/jacoco/issues/51
+        jacocoTestReport {
+            dependsOn tasks.test
+            sourceSets sourceSets.main
+            reports {
+                html.required = true
+                xml.required = true
+                csv.required = false
+            }
+            afterEvaluate { Project project ->
+                project.tasks.findByName('jacocoTestReport').dependsOn('test')
+            }
+
+            def coverageGen = it.path == ':examples' ? 'reportScoverage' : 'jacocoTestReport'
+            task reportCoverage(dependsOn: [coverageGen])
+        }
+
+        jar {
+            manifest {
+                attributes 'Implementation-Version': archiveVersion
+                attributes 'Build-Revision': determineCommitId()
+            }
+        }
     }
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
+if (userEnableTestCoverage) {
+    jacocoBadgeGenSetting {
+        jacocoReportPath "$buildDir/reports/jacoco/jacocoFullReport/jacocoFullReport.xml"
+        readmePath "${projectDir}/README.md"
+        limit = ['branch': 98, 'line': 100, 'class': 100]
+    }
 
-tasks.named('test') {
-    useJUnitPlatform()
+    //task testReport(type: TestReport) {
+    //    destinationDir = file("$buildDir/reports/allTests")
+    //    reportOn archiveSubprojects*.test.binResultsDir
+    //}
+
+    task jacocoFullReport(type: org.gradle.testing.jacoco.tasks.JacocoReport) {
+        group "verification"
+        //dependsOn = archiveSubprojects*.test
+        //additionalSourceDirs.from = files(archiveSubprojects.sourceSets.main.allSource.srcDirs)
+        //sourceDirectories.from = files(archiveSubprojects.sourceSets.main.allSource.srcDirs)
+        //classDirectories.from = files(archiveSubprojects.sourceSets.main.output)
+        //executionData.from = files(archiveSubprojects.jacocoTestReport.executionData)
+        // reports {
+        //     html.enabled(true)
+        //     xml.enabled(true)
+        //     csv.enabled(false)
+        // }
+        // exclude integration test.
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: ['com/rootcloud/framework/integration/',
+                                        'com/rootcloud/framework/tools/id/'])
+        }))
+
+        finalizedBy generateJacocoBadge
+    }
 }
 
 bootJar {
-    mainClass = 'com.wl4g.KafkaSubscriberApplication'
+    mainClass = 'com.wl4g.StreamConnectExamples'
 }

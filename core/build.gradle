@@ -1,52 +1,36 @@
 plugins {
     id 'java'
-    id "me.champeau.jmh" version "0.7.0"
+    id 'java-library'
 }
 
-description = "Kafka Subscriber Core"
+description = "Stream Connect Core"
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-actuator-autoconfigure'
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation 'io.micrometer:micrometer-registry-jmx'
-    implementation 'io.micrometer:micrometer-registry-prometheus'
-    implementation 'net.logstash.logback:logstash-logback-encoder:7.2'
-    implementation "org.springframework.kafka:spring-kafka"
-    implementation 'io.swagger.core.v3:swagger-annotations:2.2.2'
-    implementation 'com.wl4g:infra-common:3.1.26'
-    implementation 'com.googlecode.aviator:aviator:5.3.1'
-    implementation 'org.apache.arrow:arrow-memory:12.0.1'
-    annotationProcessor 'org.projectlombok:lombok:1.18.24'
+    api 'org.springframework.boot:spring-boot-starter'
+    api 'org.springframework.boot:spring-boot-starter-web'
+    api 'org.springframework.boot:spring-boot-actuator-autoconfigure'
+    api 'org.springframework.boot:spring-boot-starter-actuator'
+    api 'io.micrometer:micrometer-registry-jmx'
+    api 'io.micrometer:micrometer-registry-prometheus'
+    api 'net.logstash.logback:logstash-logback-encoder:7.2'
+    api 'io.swagger.core.v3:swagger-annotations:2.2.2'
+    api 'commons-collections:commons-collections:3.2.2'
+    //api 'org.apache.commons:commons-collections4:4.4'
+    api('com.wl4g:infra-common:3.1.26') {
+        //exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'org.apache.commons', module: 'commons-compress'
+        exclude group: 'commons-beanutils', module: 'commons-beanutils'
+        exclude group: 'commons-fileupload', module: 'commons-fileupload'
+        exclude group: 'commons-io', module: 'commons-io'
+    }
+    api 'com.googlecode.aviator:aviator:5.3.1'
+    api 'net.thisptr:jackson-jq:0.0.13'
     compileOnly 'org.projectlombok:lombok:1.18.24'
+    annotationProcessor 'org.projectlombok:lombok:1.18.24'
+    testCompileOnly 'org.projectlombok:lombok:1.18.24'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.24'
     testImplementation('org.springframework.boot:spring-boot-starter-test') {
         exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
     }
-    testImplementation 'org.springframework.kafka:spring-kafka-test'
     testImplementation("junit:junit")
-    testImplementation 'org.testcontainers:testcontainers:1.16.0'
-    testImplementation 'org.testcontainers:kafka:1.16.0'
-}
-
-jmh {
-    warmupIterations = 5
-    iterations = 5
-    fork = 1
-    failOnError = true
-    jvmArgs = ['-Xms1G', '-Xmx1G', '-XX:+UseG1GC']
-    profilers = ['gc', 'stack']
-    resultsFile = project.file("${project.buildDir}/reports/jmh/results.json")
-    resultFormat = 'JSON'
-}
-
-sourceSets {
-    test {
-        java {
-            srcDirs 'src/it/java'
-        }
-        resources {
-            srcDirs 'src/it/resources'
-        }
-    }
 }
