@@ -143,14 +143,14 @@ public abstract class SinkStream extends AbstractStream {
                                 log.debug("{} :: {} :: Sink record metadata : {}", getConnectorConfig().getName(),
                                         channel.getId(), rm);
                             }
-                            getEventPublisher().publishEvent(new CountMeterEvent(
+                            getEventPublisher().publishEvent(CountMeterEvent.of(
                                     MetricsName.sink_records_success,
                                     getBasedMeterTags()));
                         } catch (InterruptedException | CancellationException | ExecutionException ex) {
                             log.error("{} :: {} :: Unable not to getting sink result.",
                                     getConnectorConfig().getName(), channel.getId(), ex);
 
-                            getEventPublisher().publishEvent(new CountMeterEvent(
+                            getEventPublisher().publishEvent(CountMeterEvent.of(
                                     MetricsName.sink_records_failure,
                                     getBasedMeterTags()));
 
@@ -195,7 +195,7 @@ public abstract class SinkStream extends AbstractStream {
                         getPointReader().addAcknowledgeCountMeter(MetricsName.acknowledge_failure,
                                 sentResults);
                     } finally {
-                        getEventPublisher().publishEvent(new TimingMeterEvent(
+                        getEventPublisher().publishEvent(TimingMeterEvent.of(
                                 MetricsName.acknowledge_time,
                                 DEFAULT_PERCENTILES,
                                 Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),
@@ -227,7 +227,7 @@ public abstract class SinkStream extends AbstractStream {
                     getPointReader().addAcknowledgeCountMeter(MetricsName.acknowledge_failure,
                             sinkResults);
                 } finally {
-                    getEventPublisher().publishEvent(new TimingMeterEvent(
+                    getEventPublisher().publishEvent(TimingMeterEvent.of(
                             MetricsName.acknowledge_time,
                             DEFAULT_PERCENTILES,
                             Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),

@@ -184,13 +184,13 @@ public class ProcessStream extends AbstractStream {
                 try {
                     pm = pr.getFuture().get();
 
-                    getEventPublisher().publishEvent(new CountMeterEvent(
+                    getEventPublisher().publishEvent(CountMeterEvent.of(
                             MetricsName.process_records_success,
                             getBasedMeterTags()));
                 } catch (InterruptedException | CancellationException | ExecutionException ex) {
                     log.error("{} :: Unable to get process result.", getConnectorConfig().getName(), ex);
 
-                    getEventPublisher().publishEvent(new CountMeterEvent(
+                    getEventPublisher().publishEvent(CountMeterEvent.of(
                             MetricsName.process_records_failure,
                             getBasedMeterTags()));
 
@@ -221,7 +221,7 @@ public class ProcessStream extends AbstractStream {
             Thread.yield(); // May give up the CPU
         }
 
-        getEventPublisher().publishEvent(new TimingMeterEvent(
+        getEventPublisher().publishEvent(TimingMeterEvent.of(
                 MetricsName.process_records_time,
                 StreamConnectMeter.DEFAULT_PERCENTILES,
                 Duration.ofNanos(System.nanoTime() - processTimingBegin),

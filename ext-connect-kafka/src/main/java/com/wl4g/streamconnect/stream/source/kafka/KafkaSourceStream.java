@@ -151,7 +151,7 @@ public class KafkaSourceStream extends SourceStream
                           Acknowledgment ack) {
         final long sourceConsumedTimingBegin = System.nanoTime();
         try {
-            getEventPublisher().publishEvent(new CountMeterEvent(
+            getEventPublisher().publishEvent(CountMeterEvent.of(
                     MetricsName.source_records,
                     getBasedMeterTags()));
 
@@ -168,7 +168,7 @@ public class KafkaSourceStream extends SourceStream
                 ack.acknowledge();
             });
         } finally {
-            getEventPublisher().publishEvent(new TimingMeterEvent(
+            getEventPublisher().publishEvent(TimingMeterEvent.of(
                     MetricsName.source_records_time,
                     StreamConnectMeter.DEFAULT_PERCENTILES,
                     Duration.ofNanos(System.nanoTime() - sourceConsumedTimingBegin),
@@ -227,7 +227,7 @@ public class KafkaSourceStream extends SourceStream
                             log.debug("{} :: {} :: Processed record metadata : {}",
                                     getConnectorConfig().getName(), sourceStreamConfig.getGroupId(), rm);
                         }
-                        getEventPublisher().publishEvent(new CountMeterEvent(
+                        getEventPublisher().publishEvent(CountMeterEvent.of(
                                 MetricsName.checkpoint_write_success,
                                 getBasedMeterTags()));
 
@@ -235,7 +235,7 @@ public class KafkaSourceStream extends SourceStream
                         log.error("{} :: {} :: Unable not to getting process result.",
                                 getConnectorConfig().getName(), sourceStreamConfig.getGroupId(), ex);
 
-                        getEventPublisher().publishEvent(new CountMeterEvent(
+                        getEventPublisher().publishEvent(CountMeterEvent.of(
                                 MetricsName.checkpoint_write_failure,
                                 getBasedMeterTags()));
 
@@ -286,7 +286,7 @@ public class KafkaSourceStream extends SourceStream
                             sourceStreamConfig.getGroupId(), ack), ex);
                     postAcknowledgeCountMeter(MetricsName.acknowledge_failure, completedResults);
                 } finally {
-                    getEventPublisher().publishEvent(new TimingMeterEvent(
+                    getEventPublisher().publishEvent(TimingMeterEvent.of(
                             MetricsName.acknowledge_time,
                             StreamConnectMeter.DEFAULT_PERCENTILES,
                             Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),
@@ -319,7 +319,7 @@ public class KafkaSourceStream extends SourceStream
                         getConnectorConfig().getName(), sourceStreamConfig.getGroupId(), ack), ex);
                 postAcknowledgeCountMeter(MetricsName.acknowledge_failure, writePointResults);
             } finally {
-                getEventPublisher().publishEvent(new TimingMeterEvent(
+                getEventPublisher().publishEvent(TimingMeterEvent.of(
                         MetricsName.acknowledge_time,
                         StreamConnectMeter.DEFAULT_PERCENTILES,
                         Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),
@@ -329,7 +329,7 @@ public class KafkaSourceStream extends SourceStream
             }
         }
 
-        getEventPublisher().publishEvent(new TimingMeterEvent(
+        getEventPublisher().publishEvent(TimingMeterEvent.of(
                 MetricsName.checkpoint_write_time,
                 StreamConnectMeter.DEFAULT_PERCENTILES,
                 Duration.ofNanos(System.nanoTime() - writePointTimingBegin),
@@ -353,7 +353,7 @@ public class KafkaSourceStream extends SourceStream
                 })
                 .filter(Objects::nonNull)
                 .distinct()
-                .forEach(tp -> getEventPublisher().publishEvent(new CountMeterEvent(
+                .forEach(tp -> getEventPublisher().publishEvent(CountMeterEvent.of(
                         metrics, getBasedMeterTags())));
     }
 
@@ -412,7 +412,7 @@ public class KafkaSourceStream extends SourceStream
             log.error(errmsg, ex);
             throw new StreamConnectException(errmsg, ex);
         } finally {
-            getEventPublisher().publishEvent(new TimingMeterEvent(
+            getEventPublisher().publishEvent(TimingMeterEvent.of(
                     MetricsName.acknowledge_time,
                     StreamConnectMeter.DEFAULT_PERCENTILES,
                     Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),

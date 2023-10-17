@@ -247,6 +247,8 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                                 connectorConfig.getName(), result.getRecord()), ex);
                     }
                 });
+                // Release to memory.
+                results.clear();
             }
         };
     }
@@ -297,7 +299,7 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                                 (records, ack) -> {
                                     final long readTimingBegin = System.nanoTime();
                                     try {
-                                        getEventPublisher().publishEvent(new CountMeterEvent(
+                                        getEventPublisher().publishEvent(CountMeterEvent.of(
                                                 MetricsName.checkpoint_read_success,
                                                 MetricsTag.CONNECTOR,
                                                 connectorConfig.getName(),
@@ -309,7 +311,7 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                                         log.error(String.format("%s :: %s :: Failed to read point records : %s",
                                                 connectorConfig.getName(), channel.getId(), records), ex);
 
-                                        getEventPublisher().publishEvent(new CountMeterEvent(
+                                        getEventPublisher().publishEvent(CountMeterEvent.of(
                                                 MetricsName.checkpoint_read_failure,
                                                 MetricsTag.CONNECTOR,
                                                 connectorConfig.getName(),
@@ -325,7 +327,7 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                                             ack.acknowledge();
                                         });
                                     } finally {
-                                        getEventPublisher().publishEvent(new TimingMeterEvent(
+                                        getEventPublisher().publishEvent(TimingMeterEvent.of(
                                                 MetricsName.checkpoint_read_time,
                                                 StreamConnectMeter.DEFAULT_PERCENTILES,
                                                 Duration.ofNanos(System.nanoTime() - readTimingBegin),
@@ -457,7 +459,7 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                     log.error(errmsg, ex);
                     throw new StreamConnectException(errmsg, ex);
                 } finally {
-                    getEventPublisher().publishEvent(new TimingMeterEvent(
+                    getEventPublisher().publishEvent(TimingMeterEvent.of(
                             MetricsName.acknowledge_time,
                             StreamConnectMeter.DEFAULT_PERCENTILES,
                             Duration.ofNanos(System.nanoTime() - acknowledgeTimingBegin),
@@ -480,7 +482,7 @@ public class KafkaCheckpoint extends AbstractCheckpoint {
                             return new TopicPartition(record.getTopic(), record.getPartition());
                         })
                         .distinct()
-                        .forEach(tp -> getEventPublisher().publishEvent(new CountMeterEvent(
+                        .forEach(tp -> getEventPublisher().publishEvent(CountMeterEvent.of(
                                 metrics,
                                 MetricsTag.CHECKPOINT,
                                 getName(),

@@ -15,4 +15,4 @@
  *
  */
 
-package com.wl4g.streamconnect.integration.case02;
+package com.wl4g.streamconnect.integration.case102;

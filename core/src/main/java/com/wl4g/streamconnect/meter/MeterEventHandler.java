@@ -24,13 +24,16 @@ import org.springframework.context.event.EventListener;
 
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
+import java.lang.ref.WeakReference;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeToList;
+import static com.wl4g.streamconnect.meter.StreamConnectMeter.MetricsName;
 import static java.util.Collections.emptyList;
+import static java.util.Objects.nonNull;
 
 /**
  * The {@link MeterEventHandler}
@@ -67,6 +70,20 @@ public class MeterEventHandler {
                 safeList(event.getTags()).toArray(new String[0]));
     }
 
+    @EventListener(WeakReference.class)
+    public void onWeakReferenceMeterEvent(WeakReference<Object> event) {
+        final Object eventObj = event.get();
+        if (nonNull(eventObj) && eventObj instanceof AbstractMeterEvent) {
+            if (eventObj instanceof CountMeterEvent) {
+                onCountMeterEvent((CountMeterEvent) eventObj);
+            } else if (eventObj instanceof TimingMeterEvent) {
+                onTimerMeterEvent((TimingMeterEvent) eventObj);
+            } else if (eventObj instanceof GaugeMeterEvent) {
+                onGaugeMeterEvent((GaugeMeterEvent) eventObj);
+            }
+        }
+    }
+
     @Getter
     public static abstract class AbstractMeterEvent {
         private final @NotNull StreamConnectMeter.MetricsName metrics;
@@ -79,21 +96,27 @@ public class MeterEventHandler {
             // Merge tags and additionalTags.
             tags = new ArrayList<>(safeList(tags));
             tags.addAll(safeToList(String.class, additionalTags));
-            this.tags = tags;
+            this.tags = null;
         }
     }
 
     @Getter
     public static class CountMeterEvent extends AbstractMeterEvent {
-        public CountMeterEvent(@NotNull StreamConnectMeter.MetricsName metrics,
+        public CountMeterEvent(@NotNull MetricsName metrics,
                                @Null String... tags) {
             this(metrics, emptyList(), tags);
         }
 
-        public CountMeterEvent(@NotNull StreamConnectMeter.MetricsName metrics,
+        public CountMeterEvent(@NotNull MetricsName metrics,
                                @Null List<String> tags,
                                @Null String... additionalTags) {
             super(metrics, tags, additionalTags);
+        }
+
+        public static WeakReference<CountMeterEvent> of(@NotNull MetricsName metrics,
+                                                        @Null List<String> tags,
+                                                        @Null String... additionalTags) {
+            return new WeakReference<>(new CountMeterEvent(metrics, tags, additionalTags));
         }
     }
 
@@ -102,14 +125,14 @@ public class MeterEventHandler {
         private final double[] percentiles;
         private final Duration duration;
 
-        public TimingMeterEvent(@NotNull StreamConnectMeter.MetricsName metrics,
+        public TimingMeterEvent(@NotNull MetricsName metrics,
                                 @NotNull double[] percentiles,
                                 @NotNull Duration duration,
                                 @Null String... tags) {
             this(metrics, percentiles, duration, emptyList(), tags);
         }
 
-        public TimingMeterEvent(@NotNull StreamConnectMeter.MetricsName metrics,
+        public TimingMeterEvent(@NotNull MetricsName metrics,
                                 @NotNull double[] percentiles,
                                 @NotNull Duration duration,
                                 @Null List<String> tags,
@@ -118,18 +141,33 @@ public class MeterEventHandler {
             this.percentiles = percentiles;
             this.duration = duration;
         }
+
+        public static WeakReference<TimingMeterEvent> of(@NotNull MetricsName metrics,
+                                                         @NotNull double[] percentiles,
+                                                         @NotNull Duration duration,
+                                                         @Null List<String> tags,
+                                                         @Null String... additionalTags) {
+            return new WeakReference<>(new TimingMeterEvent(metrics, percentiles, duration, tags, additionalTags));
+        }
     }
 
     @Getter
     public static class GaugeMeterEvent extends AbstractMeterEvent {
         private final double value;
 
-        public GaugeMeterEvent(@NotNull StreamConnectMeter.MetricsName metrics,
+        public GaugeMeterEvent(@NotNull MetricsName metrics,
                                @Null List<String> tags,
                                double value,
                                @Null String... additionalTags) {
             super(metrics, tags, additionalTags);
             this.value = value;
+        }
+
+        public static WeakReference<GaugeMeterEvent> of(@NotNull MetricsName metrics,
+                                                        @Null List<String> tags,
+                                                        double value,
+                                                        @Null String... additionalTags) {
+            return new WeakReference<>(new GaugeMeterEvent(metrics, tags, value, additionalTags));
         }
     }
 

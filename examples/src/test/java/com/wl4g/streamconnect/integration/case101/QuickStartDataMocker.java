@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.integration.case01;
+package com.wl4g.streamconnect.integration.case101;
 
 import com.wl4g.streamconnect.integration.base.mock.AbstractDataMocker;
 import com.wl4g.streamconnect.stream.AbstractStream;

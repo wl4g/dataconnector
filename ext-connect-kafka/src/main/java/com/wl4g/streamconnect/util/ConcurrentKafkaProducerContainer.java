@@ -18,8 +18,8 @@
 package com.wl4g.streamconnect.util;
 
 import com.google.common.base.Preconditions;
-import com.wl4g.streamconnect.exception.StreamConnectException;
 import com.wl4g.infra.common.lang.Assert2;
+import com.wl4g.streamconnect.exception.StreamConnectException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.producer.Producer;
@@ -44,6 +44,7 @@ import java.util.stream.Stream;
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.lang.String.valueOf;
 import static java.util.Collections.synchronizedList;
+import static java.util.Collections.synchronizedMap;
 import static java.util.Objects.isNull;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -99,7 +100,7 @@ public class ConcurrentKafkaProducerContainer implements Closeable {
         this.transactionIdPrefix = transactionIdPrefix;
         Preconditions.checkArgument(parallelism >= 1, "required is parallelism >= 1");
         this.parallelism = parallelism;
-        this.producerProps = requireNonNull(producerProps, "producerProps must not be null");
+        this.producerProps = synchronizedMap(requireNonNull(producerProps, "producerProps must not be null"));
         init();
     }
 

@@ -15,7 +15,7 @@
  *
  */
 
-package com.wl4g.streamconnect.integration.case01;
+package com.wl4g.streamconnect.integration.case101;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.wl4g.streamconnect.integration.base.AssertionSpringApplicationIT;
