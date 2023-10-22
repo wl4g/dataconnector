@@ -1,0 +1,239 @@
+# Copyright (c) 2017 ~ 2025, the original authors individual Inc,
+# All rights reserved. Contact us James Wong <jameswong1376@gmail.com>
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+# #### Environment Configuration Template Examples. ####
+#
+
+data-connector:
+  # Custom components definition configuration.
+  definitions:
+    bases:
+      kafkaProducerProps_1: &kafkaProducerProps_1
+        "acks": "0"
+        "request.timeout.ms": 30000
+        "max.request.size": 1048576
+        "send.buffer.bytes": 131072
+        "retries": 5
+        "retry.backoff.ms": 6000
+        "compression.type": gzip
+      kafkaConsumerProps_1: &kafkaConsumerProps_1
+        "request.timeout.ms": 30000
+        "auto.offset.reset": earliest
+
+    # The filter process definitions.
+    filters:
+      - !STANDARD_EXPR_FILTER
+        name: filter_1
+        mergeConditionsDelay: 30000 # TODO, Unity triggers updates by the coordinator bus-config?
+
+    # The mapper process definitions.
+    mappers:
+      - !NOOP_MAPPER
+        name: mapper_1
+        mergeConditionsDelay: 30000 # TODO, Unity triggers updates by the coordinator bus-config?
+
+    # The QoS definitions.
+    qoss:
+      - !AT_MOST_ONCE_QOS
+        name: qos_1
+      - !AT_MOST_ATTEMPTS_QOS
+        name: qos_2
+        retries: 1024
+        retryBackoffMs: 100
+        retryMaxBackoffMs: 60000 # Default by 1m
+        retryBackoffMultiplier: 1.5
+      - !AT_RANDOM_ATTEMPTS_QOS
+        name: qos_3
+        retries: 1024
+        retryMinInterval: 200
+        retryMaxInterval: 2000
+      - !AUTO_ATTEMPTS_QOS
+        name: qos_4
+        retries: 1024
+        retryBackoffMs: 100
+        retryMaxBackoffMs: 60000 # Default by 1m
+        retryBackoffMultiplier: 1.5
+      - !ALWAYS_ATTEMPTS_QOS
+        name: qos_5
+
+    # The checkpoint(Dead Letter Queue) definitions.
+    checkpoints:
+      - !KAFKA_CHECKPOINT
+        name: checkpoint_1
+        checkpointConfig:
+          # This is the default value and will be overridden by the channel configuration.
+          topicPrefix: "test-data-connector-checkpoint-topic-"
+          topicPartitions: 10
+          replicationFactor: 1
+          groupIdPrefix: "test-data-connector-checkpoint-group-"
+          parallelism: 1
+          initTopicTimeoutMs: 60000
+          producerProps:
+            <<: *kafkaProducerProps_1
+          consumerProps:
+            "group.id": "test_dataconnector_source_01"
+            <<: *kafkaConsumerProps_1
+      - !MEMORY_CHECKPOINT
+        name: checkpoint_2
+        checkpointConfig:
+          bufferQueueCapacity: 1024
+
+    # The sharding strategy definitions.
+    shardingStrategies:
+      - !AVG_SHARDING
+        name: avgSharding_1
+      - !REPEAT_SHARDING
+        name: repeatSharding_1
+
+    # The coordinator definitions.
+    coordinators:
+      - !NOOP_COORDINATOR
+        name: coordinator_1
+      - !KAFKA_COORDINATOR
+        name: coordinator_2
+        coordinatorConfig:
+          shardingStrategy: repeatSharding_1
+          waitReadyTimeoutMs: 120000
+          bootstrapServers: ${IT_COORDINATOR_KAFKA_SERVERS_01:localhost:9092}
+          busConfig:
+            topic: "test-data-connector-coordinator-bus"
+            #consumerProps: { }
+            #adminProps: { }
+            #producerProps: { }
+          discoveryConfig:
+            groupId: "test-data-connector-coordinator-discovery"
+            #consumerProps: { }
+            #adminProps: { }
+            discoveryTimeoutMs: 30000
+
+  # The custom configurator definitions.
+  configurator: !DEFAULT_CONFIGURATOR
+    # The static source definitions.
+    staticSources:
+      - !KAFKA_SOURCE
+        name: kafka01
+        parallelism: 1
+        topicPattern: "test_dataconnector_source_shared"
+        consumerProps:
+          bootstrap.servers: ${IT_SOURCE_KAFKA_SERVERS_01:localhost:9092}
+          group.id: "test_dataconnector_source_01"
+          <<: *kafkaConsumerProps_1
+      - !KAFKA_SOURCE
+        name: kafka02
+        parallelism: 1
+        topicPattern: "test_dataconnector_source_t1003"
+        consumerProps:
+          bootstrap.servers: ${IT_SOURCE_KAFKA_SERVERS_02:localhost:9092}
+          group.id: "test_dataconnector_source_02"
+          <<: *kafkaConsumerProps_1
+
+    ## The static channel definitions.
+    staticChannels:
+      - id: c1001
+        name: "channel_1"
+        enable: true
+        tenantId: t1001
+        settingsSpec:
+          policySpec:
+            sequence: true
+            rules:
+              - tenantId: t1001
+                recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 0 && __properties__.__online__.connected == true"}}'
+                fieldFilter:
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !KAFKA_SINK
+            parallelism: 1
+            qos: qos_3
+            topic: "test_dataconnector_sink_c1001"
+            connectProps:
+              "bootstrap.servers": ${IT_SINK_KAFKA_SERVERS_01:localhost:9092}
+            #authProps:
+            #  "security.protocol": "SASL_PLAINTEXT"
+            #  "sasl.mechanism": "PLAIN"
+            #  "sasl.jaas.config": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"subscribe_user\" password=\"xxx\";"
+      - id: c1002
+        name: "channel_2"
+        enable: true
+        tenantId: t1002
+        settingsSpec:
+          policySpec:
+            sequence: false
+            rules:
+              - tenantId: t1001
+                recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"__properties__.__online__.connected == false || __properties__.__online__.connected == false"}}'
+                fieldFilter:
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !KAFKA_SINK
+            parallelism: 1
+            qos: qos_3
+            topic: "test_dataconnector_sink_c1002"
+            connectProps:
+              "bootstrap.servers": ${IT_SINK_KAFKA_SERVERS_02:localhost:9092}
+            #authProps:
+            #  "security.protocol": "SASL_PLAINTEXT"
+            #  "sasl.mechanism": "PLAIN"
+            #  "sasl.jaas.config": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"subscribe_user\" password=\"xxx\";"
+      - id: c1003
+        name: "channel_3"
+        enable: true
+        tenantId: t1003
+        settingsSpec:
+          policySpec:
+            sequence: false
+            rules:
+              - tenantId: t1003
+                recordFilter: '{"type":"RELATION","name":"testCondition1","fn":{"expression":"cts > 0 && __properties__.__online__.connected == true"}}'
+                fieldFilter: 'del(.__properties__.__online__.connected)'
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !ROCKETMQ_SINK
+            parallelism: 1
+            qos: qos_3
+            namesrvAddr: ${IT_SINK_ROCKETMQ_SERVERS_01:localhost:9876}
+            topic: "test_dataconnector_sink_c1003"
+            producerGroup: "test_dataconnector_sink_c1003_producer_group"
+            tag:
+            accessKey:
+            secretKey:
+            enableTls: false
+            sendMsgTimeoutMs: 3000
+            retryTimesWhenSendFailed: 2
+            retryTimesWhenSendAsyncFailed: 2
+            retryAnotherBrokerWhenNotStoreOK: false
+            maxMessageSize: 4194304
+
+  # The global distributed coordinator(config-bus,discovery) definitions.
+  coordinator: coordinator_1
+
+  # The data stream connectors.(one connector per business)
+  connectors:
+    - name: connector_1
+      enable: true # By default: true
+      processes:
+        - filter_1
+        - mapper_1
+        #- filter_2
+        #- mapper_2
+      executor:
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        sequenceExecutorsMaxCountLimit: 10
+        sequenceExecutorsPerQueueSize: 100
+        executorWarmUp: true
+      qos: qos_3
+      checkpoint: checkpoint_1

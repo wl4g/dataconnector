@@ -1,0 +1,297 @@
+# Copyright (c) 2017 ~ 2025, the original author James Wong individual Inc,
+# All rights reserved. Contact us <jameswong1376@gmail.com>
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# #### Environment for IT quickstart configuration. ####
+#
+
+data-connector:
+  # Custom components definition configuration.
+  definitions:
+    bases:
+      kafkaProducerProps_1: &kafkaProducerProps_1
+        "acks": "0"
+        "request.timeout.ms": 30000
+        "max.request.size": 1048576
+        "send.buffer.bytes": 131072
+        "retries": 5
+        "retry.backoff.ms": 6000
+        "compression.type": "gzip"
+      kafkaConsumerProps_1: &kafkaConsumerProps_1
+        "request.timeout.ms": 30000
+        "auto.offset.reset": "earliest"
+
+    # The filter process definitions.
+    filters:
+      - !TRUE_FILTER
+        name: filter_1
+      - !STANDARD_EXPR_FILTER
+        name: filter_2
+        expression: 'false'
+
+    # The mapper process definitions.
+    mappers:
+      - !NOOP_MAPPER
+        name: mapper_1
+      - !STANDARD_EXPR_MAPPER
+        name: mapper_2
+        registerScopes:
+          del: "net.thisptr.jackson.jq.internal.functions.DelFunction"
+
+    # The QoS definitions.
+    qoss:
+      - !AT_MOST_ONCE_QOS
+        name: qos_1
+      - !AT_MOST_ATTEMPTS_QOS
+        name: qos_2
+        retries: 1024
+        retryBackoffMs: 100
+        retryMaxBackoffMs: 60000 # Default by 1m
+        retryBackoffMultiplier: 1.5
+      - !AT_RANDOM_ATTEMPTS_QOS
+        name: qos_3
+        retries: 1024
+        retryMinInterval: 200
+        retryMaxInterval: 2000
+      - !AUTO_ATTEMPTS_QOS
+        name: qos_4
+        retries: 1024
+        retryBackoffMs: 100
+        retryMaxBackoffMs: 60000 # Default by 1m
+        retryBackoffMultiplier: 1.5
+      - !ALWAYS_ATTEMPTS_QOS
+        name: qos_5
+
+    # The checkpoint(Dead Letter Queue) definitions.
+    checkpoints:
+      - !DUMMY_CHECKPOINT
+        name: checkpoint_1
+      - !MEMORY_CHECKPOINT
+        name: checkpoint_2
+        checkpointConfig:
+          bufferQueueCapacity: 1024
+      - !KAFKA_CHECKPOINT
+        name: checkpoint_3
+        checkpointConfig:
+          # This is the default value and will be overridden by the channel configuration.
+          bootstrapServers: ${IT_COORDINATOR_KAFKA_SERVERS_01:localhost:9092}
+          topicPrefix: "it-quickstart-checkpoint-topic-"
+          topicPartitions: 10
+          replicationFactor: 1
+          groupIdPrefix: "it-quickstart-checkpoint-group-"
+          parallelism: 1
+          initTopicTimeoutMs: 60000
+          producerProps:
+            <<: *kafkaProducerProps_1
+          consumerProps:
+            <<: *kafkaConsumerProps_1
+
+    # The sharding strategy definitions.
+    shardingStrategies:
+      - !AVG_SHARDING
+        name: avgSharding_1
+      - !REPEAT_SHARDING
+        name: repeatSharding_1
+
+    # The coordinator definitions.
+    coordinators:
+      - !NOOP_COORDINATOR
+        name: coordinator_1
+      - !KAFKA_COORDINATOR
+        name: coordinator_2
+        coordinatorConfig:
+          shardingStrategy: repeatSharding_1
+          waitReadyTimeoutMs: 120000
+          bootstrapServers: ${IT_COORDINATOR_KAFKA_SERVERS_01:localhost:9092}
+          busConfig:
+            topic: "it-quickstart-coordinator-bus-topic"
+            #consumerProps: { }
+            #adminProps: { }
+            #producerProps: { }
+          discoveryConfig:
+            groupId: "it-quickstart-coordinator-discovery-group"
+            #consumerProps: { }
+            #adminProps: { }
+            discoveryTimeoutMs: 30000
+
+  # The custom configurator definitions.
+  configurator: !DEFAULT_CONFIGURATOR
+    # The static source definitions.
+    staticSources:
+      - !KAFKA_SOURCE
+        name: kafka01
+        enable: true
+        parallelism: 1
+        topicPattern: "it-quickstart-source-topic-shared"
+        consumerProps:
+          bootstrap.servers: ${IT_SOURCE_KAFKA_SERVERS_01:localhost:9092}
+          group.id: "it-quickstart-source-group-01"
+          <<: *kafkaConsumerProps_1
+      - !KAFKA_SOURCE
+        name: kafka02
+        enable: true
+        parallelism: 1
+        topicPattern: "it-quickstart-source-topic-t1003"
+        consumerProps:
+          bootstrap.servers: ${IT_SOURCE_KAFKA_SERVERS_02:localhost:9092}
+          group.id: "it-quickstart-source-group-02"
+          <<: *kafkaConsumerProps_1
+      - !KAFKA_SOURCE
+        name: kafka03
+        enable: true
+        parallelism: 1
+        topicPattern: "it-quickstart-source-topic-t1004"
+        consumerProps:
+          bootstrap.servers: ${IT_SOURCE_KAFKA_SERVERS_03:localhost:9092}
+          group.id: "it-quickstart-source-group-03"
+          <<: *kafkaConsumerProps_1
+
+    ## The static channel definitions.
+    staticChannels:
+      - id: c1001
+        name: "channel_1"
+        enable: true
+        settingsSpec:
+          policySpec:
+            sequence: true
+            rules: # corresponds to chains.
+              - name: rule_1
+                chain:
+                  - name: filter_2
+                    value: '__tenantId__ == t1001 && __properties__.__online__.connected == true'
+                  #- name: mapper_1
+                  #  value:
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !KAFKA_SINK
+            parallelism: 1
+            qos: qos_3
+            topic: "it-quickstart-sink-topic-c1001"
+            producerProps:
+              "bootstrap.servers": ${IT_SINK_KAFKA_SERVERS_01:localhost:9092}
+              #"security.protocol": "SASL_PLAINTEXT"
+              #"sasl.mechanism": "PLAIN"
+              #"sasl.jaas.config": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"subscribe_user\" password=\"xxx\";"
+      - id: c1002
+        name: "channel_2"
+        enable: true
+        settingsSpec:
+          policySpec:
+            sequence: false
+            rules: # corresponds to chains.
+              - name: rule_1
+                chain:
+                  # e.g Self org data record scope filter.
+                  - name: filter_2
+                    value: '__tenantId__ == t1002'
+                  # e.g Self org biz record filter.
+                  - name: filter_2
+                    value: '__properties__.__online__.connected == true'
+                  ## e.g Self org data field scope mapper.
+                  #- name: mapper_1
+                  #  value:
+              - name: rule_2
+                chain:
+                  # e.g Cross org granted data record scope filter.
+                  - name: filter_2
+                    value: '__tenantId__ == t1001'
+                  # e.g Cross org granted biz record filter.
+                  - name: filter_2
+                    value: '__properties__.__online__.connected == false'
+                  # e.g Cross org granted data field scope mapper.
+                  - name: mapper_2
+                    value: 'del(.__properties__.__online__.connected)'
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !KAFKA_SINK
+            parallelism: 1
+            qos: qos_3
+            topic: "it-quickstart-sink-topic-c1002"
+            producerProps:
+              "bootstrap.servers": ${IT_SINK_KAFKA_SERVERS_02:localhost:9092}
+              #"security.protocol": "SASL_PLAINTEXT"
+              #"sasl.mechanism": "PLAIN"
+              #"sasl.jaas.config": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"subscribe_user\" password=\"xxx\";"
+      - id: c1003
+        name: "channel_3"
+        enable: true
+        settingsSpec:
+          policySpec:
+            sequence: false
+            rules: # corresponds to chains.
+              - name: rule_1
+                chain:
+                  - name: filter_2
+                    value: '__tenantId__ == t1003 && __properties__.__online__.connected == true'
+                  #- name: mapper_1
+                  #  value:
+          checkpointSpec:
+            servers: ${IT_CHECKPOINT_KAFKA_SERVERS_01:localhost:9092}
+            retentionTime: 86400000 # By default: 1d
+            retentionBytes: 10737418240 # By default: 10G
+          sinkSpec: !ROCKETMQ_SINK
+            parallelism: 1
+            qos: qos_3
+            namesrvAddr: ${IT_SINK_ROCKETMQ_SERVERS_01:localhost:9876}
+            topic: "it-quickstart-sink-topic-c1003"
+            producerGroup: "it-quickstart-sink-producer-group-c1003"
+            tag:
+            accessKey:
+            secretKey:
+            securityToken:
+            signature:
+            enableTls: false
+            sendMsgTimeoutMs: 3000
+            retryTimesWhenSendFailed: 2
+            retryTimesWhenSendAsyncFailed: 2
+            retryAnotherBrokerWhenNotStoreOK: false
+            maxMessageSize: 4194304
+
+  # The global distributed coordinator(config-bus,discovery) definitions.
+  coordinator: coordinator_1
+
+  # The data stream connectors.(one connector per business)
+  connectors:
+    - name: tsdata_connector
+      enable: true # By default: true
+      source: kafka01
+      qos: qos_4
+      checkpoint: checkpoint_3
+      dispatcher:
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        sequenceExecutorsMaxCountLimit: 10
+        sequenceExecutorsPerQueueSize: 100
+        executorWarmUp: true
+    - name: event_connector
+      enable: true # By default: true
+      source: kafka02
+      qos: qos_4
+      checkpoint: checkpoint_3
+      dispatcher:
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        sequenceExecutorsMaxCountLimit: 10
+        sequenceExecutorsPerQueueSize: 100
+        executorWarmUp: true
+    - name: alarm_connector
+      enable: true # By default: true
+      source: kafka03
+      qos: qos_4
+      checkpoint: checkpoint_3
+      dispatcher:
+        sharedExecutorThreadPoolSize: 50
+        sharedExecutorQueueSize: 500
+        sequenceExecutorsMaxCountLimit: 10
+        sequenceExecutorsPerQueueSize: 100
+        executorWarmUp: true

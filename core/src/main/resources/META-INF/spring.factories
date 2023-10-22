@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 org.springframework.boot.env.PropertySourceLoader=\
-com.wl4g.streamconnect.spring.CustomYamlPropertySourceLoader
+com.wl4g.dataconnector.spring.CustomYamlPropertySourceLoader
 
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-com.wl4g.streamconnect.config.StreamConnectAutoConfiguration
+com.wl4g.dataconnector.config.DataConnectorAutoConfiguration

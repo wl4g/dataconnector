@@ -1,6 +1,5 @@
 rootProject.name = "${projectName}"
 include 'core'
-include 'examples'
 include 'ext-coordinator-kafka'
 include 'ext-checkpoint-kafka'
 include 'ext-checkpoint-minio'
@@ -9,3 +8,4 @@ include 'ext-connect-rocketmq'
 //include 'ext-connect-rabbitmq'
 include 'ext-connect-jdbc'
 include 'ext-connect-tdengine'
+include 'server'

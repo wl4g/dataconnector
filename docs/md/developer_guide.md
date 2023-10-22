@@ -8,8 +8,8 @@
 - Clone project
 
 ```bash
-git clone git@github.com/wl4g/stream-connect.git
-./gradlew clean build -x test -x checkstyleMain -x checkstyleTest
+git clone git@github.com/wl4g/data-connector.git
+./gradlew clean build -x test -x spotbugsMain -x spotbugsTest -x checkstyleMain -x checkstyleTest -x checkstyleJmh
 ```
 
 - Accessing kafka-ui: http://localhost:38080/

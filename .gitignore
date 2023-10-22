@@ -6,6 +6,7 @@ build/
 **.probe
 **.lock
 **.bin
+**.uuid
 
 ### IntelliJ IDEA ###
 .idea/

@@ -1,4 +1,4 @@
-# stream-connect
+# data-connector
 
 > The streaming connect framework and server, supports cross tenant custom filter(e.g aviator expr), mapper, sinker open subscribe, data authority and record key-level sequence handling, subscribe interrupted and resumed checkpoint strategy, ensure data is not lost.
 
@@ -11,4 +11,4 @@
 
 ## Stargazers over time
 
-[![Stargazers over time](https://starchart.cc/wl4g/stream-connect.svg)](https://starchart.cc/wl4g/stream-connect)
+[![Stargazers over time](https://starchart.cc/wl4g/data-connector.svg)](https://starchart.cc/wl4g/data-connector)

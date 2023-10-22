@@ -84,6 +84,7 @@ ext {
 
     userTestLoggingEvents = project.hasProperty("testLoggingEvents") ? Arrays.asList(testLoggingEvents.split(",")) : null
 
+    userEnableRat = project.hasProperty("enableRat") ? enableRat : false
     userEnableCheckstyle = project.hasProperty("enableCheckstyle") ? enableCheckstyle : false
     userEnableSpotbugs = project.hasProperty("enableSpotbugs") ? enableSpotbugs : true
     userEnableTestCoverage = project.hasProperty("enableTestCoverage") ? enableTestCoverage : true
@@ -166,7 +167,8 @@ def determineCommitId() {
 apply from: file('wrapper.gradle')
 apply plugin: 'com.github.dawnwords.jacoco.badge'
 
-if (file('.git').exists()) {
+if (userEnableRat && file('.git').exists()) {
+    rat.enabled = true
     rat {
         verbose.set(true)
         reportDir.set(project.file('build/rat'))
@@ -223,10 +225,12 @@ subprojects {
         implementation enforcedPlatform('org.springframework.boot:spring-boot-dependencies:2.7.13') // 3.1.1
         // see:https://github.com/spring-projects/spring-kafka/issues/2744
         implementation 'org.springframework.kafka:spring-kafka:2.9.11'
-
-        testImplementation "org.springframework.boot:spring-boot-starter-test"
+        api 'org.projectlombok:lombok:1.18.24'
+        compileOnly 'org.projectlombok:lombok:1.18.24'
+        annotationProcessor 'org.projectlombok:lombok:1.18.24'
         testCompileOnly 'org.projectlombok:lombok:1.18.24'
         testAnnotationProcessor 'org.projectlombok:lombok:1.18.24'
+        testImplementation "org.springframework.boot:spring-boot-starter-test"
         testImplementation("junit:junit:4.13.2")
         testImplementation "org.junit.jupiter:junit-jupiter:5.8.1"
         testImplementation "org.junit.jupiter:junit-jupiter-api:5.8.1"
@@ -401,11 +405,11 @@ subprojects {
         if (shouldUseJUnit5) {
             useJUnitPlatform {
                 excludeTags "integration"
-                excludeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                excludeTags "com.wl4g.dataconnector.integration.base.IntegrationTest"
             }
         } else {
             useJUnit {
-                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                includeCategories "com.wl4g.dataconnector.integration.base.IntegrationTest"
             }
         }
 
@@ -437,14 +441,14 @@ subprojects {
         if (shouldUseJUnit5) {
             useJUnitPlatform {
                 includeTags "integration"
-                includeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                includeTags "com.wl4g.dataconnector.integration.base.IntegrationTest"
                 // Both engines are needed to run JUnit 4 tests alongside JUnit 5 tests.
                 // junit-vintage (JUnit 4) can be removed once the JUnit 4 migration is complete.
                 includeEngines "junit-vintage", "junit-jupiter"
             }
         } else {
             useJUnit {
-                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                includeCategories "com.wl4g.dataconnector.integration.base.IntegrationTest"
             }
         }
 
@@ -477,11 +481,11 @@ subprojects {
         if (shouldUseJUnit5) {
             useJUnitPlatform {
                 excludeTags "integration"
-                excludeTags "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                excludeTags "com.wl4g.dataconnector.integration.base.IntegrationTest"
             }
         } else {
             useJUnit {
-                includeCategories "com.wl4g.streamconnect.integration.base.IntegrationTest"
+                includeCategories "com.wl4g.dataconnector.integration.base.IntegrationTest"
             }
         }
 
@@ -594,8 +598,8 @@ if (userEnableTestCoverage) {
         // }
         // exclude integration test.
         classDirectories.setFrom(files(classDirectories.files.collect {
-            fileTree(dir: it, exclude: ['com/rootcloud/framework/integration/',
-                                        'com/rootcloud/framework/tools/id/'])
+            fileTree(dir: it, exclude: ['com/wl4g/infra/common/tests/',
+                                        'com/wl4g/infra/common/natives/'])
         }))
 
         finalizedBy generateJacocoBadge
@@ -603,5 +607,5 @@ if (userEnableTestCoverage) {
 }
 
 bootJar {
-    mainClass = 'com.wl4g.StreamConnectExamples'
+    mainClass = 'com.wl4g.DataConnectorApplication'
 }

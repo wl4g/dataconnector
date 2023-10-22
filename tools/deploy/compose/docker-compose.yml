@@ -11,7 +11,7 @@
 version: "3"
 
 networks:
-  streamconnect_net:
+  dataconnector_net:
     driver: bridge
 
 services:
@@ -24,7 +24,7 @@ services:
       - ZOO_PORT_NUMBER=12181
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
@@ -41,7 +41,7 @@ services:
       - ZOO_PORT_NUMBER=22181
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
@@ -50,7 +50,7 @@ services:
       - "22181:22181"
 
   kafka01: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
-    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.6.0 # docker.io/bitnami/kafka:2.6.0
     container_name: kafka01
     hostname: kafka01
     environment:
@@ -58,9 +58,10 @@ services:
       - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka01:19092
       - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:19092
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper01:12181
+      - JMX_PORT=9997
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     depends_on:
       - zookeeper01
     ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
@@ -73,7 +74,7 @@ services:
       - "19092:19092"
 
   kafka02: ## see:https://raw.githubusercontent.com/bitnami/containers/main/bitnami/kafka/docker-compose.yml
-    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.2.0 # docker.io/bitnami/kafka:2.2.0
+    image: registry.cn-shenzhen.aliyuncs.com/wl4g-k8s/bitnami_kafka:2.6.0 # docker.io/bitnami/kafka:2.6.0
     container_name: kafka02
     hostname: kafka02
     environment:
@@ -81,9 +82,10 @@ services:
       - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka02:29092
       - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:29092
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper02:22181
+      - JMX_PORT=9997
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     depends_on:
       - zookeeper02
     ## see:https://hub.docker.com/r/bitnami/kafka/#Persisting_your_data
@@ -106,15 +108,26 @@ services:
       - KAFKA_CLUSTERS_0_NAME=dev-kafka01
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka01:19092
       - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://schema-registry01:18085
-      #- KAFKA_CLUSTERS_0_METRICS_PORT=9997
+      - KAFKA_CLUSTERS_0_METRICS_PORT=9997
+      - KAFKA_CLUSTERS_0_AUDIT_TOPIC_AUDIT_ENABLED=true
+      - KAFKA_CLUSTERS_0_AUDIT_TOPIC=__kui-audit-log
+      - KAFKA_CLUSTERS_0_AUDIT_AUDIT_TOPIC_PROPERTIES_RETENTION_MS=43200000
+      - KAFKA_CLUSTERS_0_AUDIT_AUDIT_TOPICS_PARTITIONS=3
+      - KAFKA_CLUSTERS_0_AUDIT_LEVEL=ALTER_ONLY
       #- KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME=first
       #- KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS=http://kafka-connect0:8083
       - KAFKA_CLUSTERS_1_NAME=dev-kafka02
       - KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS=kafka02:29092
       - KAFKA_CLUSTERS_1_SCHEMAREGISTRY=http://schema-registry02:28085
+      - KAFKA_CLUSTERS_1_METRICS_PORT=9997
+      - KAFKA_CLUSTERS_1_AUDIT_TOPIC_AUDIT_ENABLED=true
+      - KAFKA_CLUSTERS_1_AUDIT_TOPIC=__kui-audit-log
+      - KAFKA_CLUSTERS_1_AUDIT_AUDIT_TOPIC_PROPERTIES_RETENTION_MS=43200000
+      - KAFKA_CLUSTERS_1_AUDIT_AUDIT_TOPICS_PARTITIONS=3
+      - KAFKA_CLUSTERS_1_AUDIT_LEVEL=ALTER_ONLY
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     depends_on:
       - zookeeper01
       - zookeeper02
@@ -140,7 +153,7 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     depends_on:
       - kafka01
     ports:
@@ -160,21 +173,21 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
     restart: unless-stopped
     networks:
-      - streamconnect_net
+      - dataconnector_net
     depends_on:
       - kafka02
     ports:
       - "28085:28085"
 
-#  stream-connect:
-#    image: docker.io/wl4g/stream-connect:1.0.0
-#    container_name: stream-connect
-#    hostname: stream-connect
+#  data-connector:
+#    image: docker.io/wl4g/data-connector:1.0.0
+#    container_name: data-connector
+#    hostname: data-connector
 #    environment:
 #      SERVER_PORT: 8000
 #    restart: unless-stopped
 #    networks:
-#      - streamconnect_net
+#      - dataconnector_net
 #    depends_on:
 #      - zookeeper
 #      - kafka
