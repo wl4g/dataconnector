@@ -87,7 +87,7 @@ public class ChannelInfo {
     private @NotBlank String id;
     private @NotBlank String name;
     private @Default boolean enable = true;
-    private @Nullable  List<String> labels;
+    private @Nullable List<String> labels;
     private @NotNull
     @Builder.Default SettingsSpec settingsSpec = new SettingsSpec();
 
@@ -161,7 +161,7 @@ public class ChannelInfo {
     @NoArgsConstructor
     public static class RuleItem {
         private @NotBlank String name;
-        private @Nullable  String value;
+        private @Nullable String value;
 
         public void validate() {
             hasTextOf(name, "name");

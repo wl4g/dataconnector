@@ -167,7 +167,7 @@ public class DispatchStream extends AbstractStream {
                             final ThreadPoolExecutor executor = determineDispatchExecutor(c, r);
                             final Future<PendingMetadata> f;
                             try {
-                                f = executor.submit(buildDispatchTask(c, r));
+                                f = executor.submit(wrapDispatchTask(c, r));
                             } catch (RejectedExecutionException ex) {
                                 // TODO custom reject handling ???
                                 throw new DataConnectorException(ex);
@@ -250,32 +250,30 @@ public class DispatchStream extends AbstractStream {
         final MessageRecord<String, Object> record = pr.getRecord();
         final PendingResult rePendingResult = new PendingResult(channel, record,
                 determineDispatchExecutor(channel, record)
-                        .submit(buildDispatchTask(pr.getChannel(), pr.getRecord())),
+                        .submit(wrapDispatchTask(pr.getChannel(), pr.getRecord())),
                 pr.getRetryTimes() + 1);
         prsQueue.offer(rePendingResult);
     }
 
-    private Callable<PendingMetadata> buildDispatchTask(ChannelInfoWrapper channel,
-                                                        MessageRecord<String, Object> record) {
+    private Callable<PendingMetadata> wrapDispatchTask(ChannelInfoWrapper channel,
+                                                       MessageRecord<String, Object> record) {
         return () -> {
-            //final List<ComplexProcessResult> result = safeList(channel.getChains())
-            //        //.stream()
-            //        .parallelStream()
-            //        .map(ch -> ch.process(record))
-            //        .collect(toList());
-            //final boolean hasMatched = result.stream().anyMatch(ComplexProcessResult::isMatched);
-            //return new PendingMetadata(hasMatched, result.getRecord());
-
-            boolean hasMatched = false;
-            MessageRecord<String, Object> r = record;
-            for (ComplexProcessChain chain : safeList(channel.getChains())) {
-                final ComplexProcessResult result = chain.process(r);
+            // Notice: The filters/mappers are allowed to be freely combined and executed in order.
+            // As long as any chain matches, it means that the current record is the data that can
+            // be subscribed to the current channel (logical short-circuit AND)
+            //
+            // For example, in a cross-tenant subscription/channel scenario, subscribers/channels outside
+            // the tenant may only be authorized for certain fields. At this time, the subscriber/channel
+            // may have multiple sets of rules, and lazy matching is performed in order.
+            //
+            for (int i = 0, size = channel.getChains().size(); i < size; i++) {
+                final ComplexProcessChain chain = channel.getChains().get(i);
+                final ComplexProcessResult result = chain.process(i < (size - 1), record);
                 if (result.isMatched()) {
-                    hasMatched = true;
+                    return new PendingMetadata(true, result.getRecord());
                 }
-                r = result.getRecord();
             }
-            return new PendingMetadata(hasMatched, r);
+            return new PendingMetadata(false, record);
         };
     }
 

@@ -23,6 +23,7 @@ import com.wl4g.dataconnector.config.DataConnectorConfiguration;
 import com.wl4g.dataconnector.framework.NamedDataConnectorSpi;
 import com.wl4g.dataconnector.stream.AbstractStream.MessageRecord;
 import com.wl4g.dataconnector.stream.dispatch.ComplexProcessHandler;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -40,7 +41,14 @@ import static java.util.Objects.requireNonNull;
  **/
 public interface IProcessMapper extends ComplexProcessHandler {
 
-    MessageRecord<String, Object> doMap(MessageRecord<String, Object> record);
+    MessageRecord<String, Object> doMap(MapperContext context);
+
+    @Getter
+    @AllArgsConstructor
+    class MapperContext {
+        private boolean hasNext;
+        private MessageRecord<String, Object> record;
+    }
 
     @Getter
     @Setter

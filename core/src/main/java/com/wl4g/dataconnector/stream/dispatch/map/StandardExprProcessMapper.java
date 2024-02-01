@@ -89,10 +89,16 @@ public class StandardExprProcessMapper extends AbstractProcessMapper<StandardExp
     }
 
     @Override
-    public MessageRecord<String, Object> doMap(MessageRecord<String, Object> record) {
+    public MessageRecord<String, Object> doMap(MapperContext context) {
+        final MessageRecord<String, Object> record = context.getRecord();
         Object mappedValue = record.getValue();
         if (mappedValue instanceof JsonNode) {
             try {
+                // Notice: If there is another chain, it must be cloned to avoid affecting the
+                // execution of the next chain/mapper.
+                if (context.isHasNext()) {
+                    mappedValue = ((JsonNode) mappedValue).deepCopy();
+                }
                 mappedValue = jqCached.apply(jqScopeLocal.get(), (JsonNode) mappedValue).get(0);
             } catch (Exception ex) {
                 throw new DataConnectorException(String.format("Failed to invoke JQ expr of rule: %s, channelId : %s",

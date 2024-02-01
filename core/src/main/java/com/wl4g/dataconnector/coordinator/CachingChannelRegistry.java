@@ -17,7 +17,6 @@
 
 package com.wl4g.dataconnector.coordinator;
 
-import com.wl4g.infra.common.lang.Assert2;
 import com.wl4g.dataconnector.config.ChannelInfo;
 import com.wl4g.dataconnector.config.DataConnectorConfiguration;
 import com.wl4g.dataconnector.config.DataConnectorConfiguration.ConnectorConfig;
@@ -26,6 +25,7 @@ import com.wl4g.dataconnector.stream.dispatch.ComplexProcessChain;
 import com.wl4g.dataconnector.stream.dispatch.ComplexProcessHandler;
 import com.wl4g.dataconnector.stream.dispatch.filter.IProcessFilter.ProcessFilterProvider;
 import com.wl4g.dataconnector.stream.dispatch.map.IProcessMapper.ProcessMapperProvider;
+import com.wl4g.infra.common.lang.Assert2;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -40,7 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static com.wl4g.infra.common.collection.CollectionUtils2.safeList;
 import static java.util.Collections.unmodifiableMap;
-import static java.util.Objects.*;
+import static java.util.Objects.isNull;
+import static java.util.Objects.nonNull;
+import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 
@@ -156,7 +158,7 @@ public class CachingChannelRegistry {
 
     @Getter
     public static class ChannelInfoWrapper extends ChannelInfo {
-        private final List<ComplexProcessChain> chains;
+        private final @NotNull List<ComplexProcessChain> chains;
 
         public ChannelInfoWrapper(@NotNull List<ComplexProcessChain> chains,
                                   @NotNull ChannelInfo channel) {

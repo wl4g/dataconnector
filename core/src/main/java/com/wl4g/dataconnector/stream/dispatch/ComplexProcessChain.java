@@ -20,6 +20,7 @@ package com.wl4g.dataconnector.stream.dispatch;
 import com.wl4g.dataconnector.stream.AbstractStream.MessageRecord;
 import com.wl4g.dataconnector.stream.dispatch.filter.IProcessFilter;
 import com.wl4g.dataconnector.stream.dispatch.map.IProcessMapper;
+import com.wl4g.dataconnector.stream.dispatch.map.IProcessMapper.MapperContext;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -42,7 +43,8 @@ public class ComplexProcessChain {
         this.processes = isNull(processes) ? new ComplexProcessHandler[0] : processes;
     }
 
-    public ComplexProcessResult process(MessageRecord<String, Object> record) {
+    public ComplexProcessResult process(boolean hasNext, MessageRecord<String, Object> record) {
+        final MapperContext context = new MapperContext(hasNext, record);
         boolean lastMatched = false;
         for (ComplexProcessHandler handler : processes) {
             if (handler instanceof IProcessFilter) {
@@ -51,7 +53,7 @@ public class ComplexProcessChain {
                     break;
                 }
             } else if (handler instanceof IProcessMapper) {
-                record = ((IProcessMapper) handler).doMap(record);
+                record = ((IProcessMapper) handler).doMap(context);
             }
         }
         return new ComplexProcessResult(lastMatched, record);

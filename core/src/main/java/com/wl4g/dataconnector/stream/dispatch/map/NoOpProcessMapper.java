@@ -44,8 +44,8 @@ public class NoOpProcessMapper extends AbstractProcessMapper<NoOpProcessMapperCo
     }
 
     @Override
-    public MessageRecord<String, Object> doMap(MessageRecord<String, Object> record) {
-        return record;
+    public MessageRecord<String, Object> doMap(MapperContext context) {
+        return context.getRecord();
     }
 
     @Getter
